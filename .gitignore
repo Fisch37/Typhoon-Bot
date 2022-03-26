@@ -1,0 +1,6 @@
+__pycache__
+.vscode
+logs
+beta_testers.txt
+config.cfg
+token

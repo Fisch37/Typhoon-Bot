@@ -1,0 +1,5 @@
+discord.py>2.0
+SQLAlchemy>=1.4.25
+asyncmy>=0.2
+greenlet>=1
+emoji==1.6.1
