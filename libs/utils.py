@@ -5,6 +5,8 @@ from datetime import datetime
 from discord.ext import commands
 import discord
 
+from ormclasses import *
+
 def first(sequence : Sequence[Any], matcher : Callable) -> Any:
     for element in sequence:
         if matcher(element): return element
@@ -218,4 +220,41 @@ class WebhookPool:
     def clear(self):
         self.pool.clear()
         pass
+    pass
+
+async def get_guild(session : asql.AsyncSession, guild_id : int):
+    result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(guild_id)))
+    sql_guild = result.scalar_one_or_none()
+    if sql_guild is None:
+        sql_guild = Guild(id=str(guild_id))
+        session.add(sql_guild)
+        pass
+
+    return sql_guild
+    pass
+
+async def wait_for_convert(bot : commands.Bot, ctx : commands.Context, converter : commands.Converter, error_prompt : str = "Passed argument could not be converted", timeout : float = None) -> Optional[Any]:
+    while True:
+        resp_msg : discord.Message = await bot.wait_for("message",check=lambda msg: msg.author == ctx.author and msg.channel == ctx.channel,timeout=timeout)
+        try:
+            obj = await converter.convert(ctx,resp_msg.content)
+        except commands.CommandError:
+            await ctx.send(error_prompt,ephemeral=True)
+            pass
+        else:
+            break
+        finally:
+            await resp_msg.delete()
+            pass
+        pass
+
+    return obj
+    pass
+
+async def wait_for_role(bot : commands.Bot, ctx : commands.Context, error_prompt : str = "Passed argument was not a role",timeout : float = None) -> Optional[discord.Role]:
+    return await wait_for_convert(bot,ctx,commands.RoleConverter(),error_prompt,timeout)
+    pass
+
+async def wait_for_text_channel(bot : commands.Bot, ctx : commands.Context, error_prompt : str = "Passed argument was not a text channel",timeout : float = None) -> Optional[discord.TextChannel]:
+    return await wait_for_convert(bot,ctx,commands.TextChannelConverter(),error_prompt,timeout)
     pass

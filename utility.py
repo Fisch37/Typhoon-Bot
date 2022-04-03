@@ -1475,7 +1475,7 @@ class Utility(commands.Cog):
             react_roles : ReactionRoleDict = reaction_roles.react_roles
 
             # This could have been done in a dictionary comprehension, but, seeing as I do in fact have a soul and would like to keep my sanity, it wasn't done here.
-            # Although if you really need it: {discord.PartialEmoji.from_str(emoji_str):BOT.get_guild(guild_id).get_role(role_id) for emoji_str, guild_id, role_id in react_roles}
+            # Although if you really need it: {discord.PartialEmoji.from_str(emoji_str):BOT.get_guild(guild_id).get_role(role_id) for emoji_str, (guild_id, role_id) in react_roles}
             # I told you it would be horrible
             converted_react_roles = {}
             for emoji_str, (guild_id, role_id) in react_roles.items():

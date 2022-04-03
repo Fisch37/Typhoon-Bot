@@ -59,6 +59,7 @@ class GuildWarning(Base):
     pass
 
 class GuildMutes(Base):
+    """DEPRECATED -- USE TIMEOUT FUNCTIONALITY INSTEAD"""
     __tablename__="mutes"
 
     guild_id              = sql.Column(sql.String(20),                   primary_key=True, nullable=True )
