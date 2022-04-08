@@ -1439,7 +1439,7 @@ class Utility(commands.Cog):
     @commands.Cog.listener("on_raw_reaction_add")
     @commands.Cog.listener("on_raw_reaction_remove")
     async def reaction_role_listener(self, payload : discord.RawReactionActionEvent):
-        if payload.guild_id is None: return # Do nothing if reaction is outside of guild
+        if payload.guild_id is None or payload.user_id == BOT.user.id: return # Do nothing if reaction is outside of guild or user is this bot (to prevent the bot having 50 million roles and appearing in them as well)
 
         message_id = payload.message_id
         emoji      = payload.emoji
