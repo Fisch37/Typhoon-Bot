@@ -6,7 +6,7 @@ from libs import utils, config
 from libs.config_base import branch_factory, element_factory, ConfigElement, ConfigButton, ConfigSelect, CONFIG_TIMEOUT
 from libs.interpret_levelup import VAR_DESCR as LVL_UP_MSG_VAR_DESCR, raw_format as lvl_up_formatter
 from libs.converters.time import DurationConverter, OutOfOrderException
-from logging_utils import LoggingSettings, translation_table as LOGGING_TRANSLATE
+from libs.logging_utils import LoggingSettings, translation_table as LOGGING_TRANSLATE
 import asyncio
 
 import discord

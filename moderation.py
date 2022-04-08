@@ -7,7 +7,7 @@ import logging, random, asyncio, dataclasses, json
 from datetime import datetime
 from typing import Union, Optional, Literal
 from difflib import SequenceMatcher
-from logging_utils import LoggingSettings
+from libs.logging_utils import LoggingSettings
 
 import discord
 from discord.ext import commands, tasks
