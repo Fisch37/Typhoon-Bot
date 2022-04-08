@@ -42,6 +42,8 @@ class Guild(Base):
     upper_xp_gain           = sql.Column(mysql.TINYINT(unsigned=True),                       nullable=False,default=25)
     xp_timeout              = sql.Column(mysql.SMALLINT(unsigned=True),                      nullable=False,default=60)
     level_state             = sql.Column(sql.Boolean,                                        nullable=False,default=False)
+    level_channel           = sql.Column(sql.String(20),                                     nullable=True)
+    level_msg               = sql.Column(sql.String(200),                                    nullable=False,default="Geez, {user.mention}! You did it! You leveled up to level {level}!")
     pass
 
 class ReactionRoles(Base):
@@ -59,7 +61,7 @@ class GuildWarning(Base):
     pass
 
 class GuildMutes(Base):
-    """DEPRECATED -- USE TIMEOUT FUNCTIONALITY INSTEAD"""
+    """DEPRECATED -- USE DISCORD'S TIMEOUT INSTEAD"""
     __tablename__="mutes"
 
     guild_id              = sql.Column(sql.String(20),                   primary_key=True, nullable=True )

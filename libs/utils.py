@@ -222,7 +222,7 @@ class WebhookPool:
         pass
     pass
 
-async def get_guild(session : asql.AsyncSession, guild_id : int):
+async def get_guild(session : asql.AsyncSession, guild_id : int) -> Guild:
     result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(guild_id)))
     sql_guild = result.scalar_one_or_none()
     if sql_guild is None:
@@ -233,7 +233,17 @@ async def get_guild(session : asql.AsyncSession, guild_id : int):
     return sql_guild
     pass
 
-async def wait_for_convert(bot : commands.Bot, ctx : commands.Context, converter : commands.Converter, error_prompt : str = "Passed argument could not be converted", timeout : float = None) -> Optional[Any]:
+class IntConverter(commands.Converter):
+    async def convert(self, ctx: commands.Context, argument: str) -> int:
+        try:
+            return int(argument)
+        except ValueError:
+            raise commands.BadArgument("argument is not a valid integer")
+            pass
+        pass
+    pass
+
+async def wait_for_convert(bot : commands.Bot, ctx : commands.Context, converter : commands.Converter, error_prompt : str = "Passed argument could not be converted", check = lambda msg: True, timeout : float = None) -> Optional[Any]:
     while True:
         resp_msg : discord.Message = await bot.wait_for("message",check=lambda msg: msg.author == ctx.author and msg.channel == ctx.channel,timeout=timeout)
         try:
@@ -242,6 +252,9 @@ async def wait_for_convert(bot : commands.Bot, ctx : commands.Context, converter
             await ctx.send(error_prompt,ephemeral=True)
             pass
         else:
+            if not check(obj): 
+                await ctx.send(error_prompt,ephemeral=True)
+                continue
             break
         finally:
             await resp_msg.delete()
@@ -251,10 +264,10 @@ async def wait_for_convert(bot : commands.Bot, ctx : commands.Context, converter
     return obj
     pass
 
-async def wait_for_role(bot : commands.Bot, ctx : commands.Context, error_prompt : str = "Passed argument was not a role",timeout : float = None) -> Optional[discord.Role]:
-    return await wait_for_convert(bot,ctx,commands.RoleConverter(),error_prompt,timeout)
+async def wait_for_role(bot : commands.Bot, ctx : commands.Context, error_prompt : str = "Passed argument was not a role", check = lambda msg: True,timeout : float = None) -> Optional[discord.Role]:
+    return await wait_for_convert(bot,ctx,commands.RoleConverter(),error_prompt,check,timeout)
     pass
 
-async def wait_for_text_channel(bot : commands.Bot, ctx : commands.Context, error_prompt : str = "Passed argument was not a text channel",timeout : float = None) -> Optional[discord.TextChannel]:
-    return await wait_for_convert(bot,ctx,commands.TextChannelConverter(),error_prompt,timeout)
+async def wait_for_text_channel(bot : commands.Bot, ctx : commands.Context, error_prompt : str = "Passed argument was not a text channel", timeout : float = None, check = lambda msg: True) -> Optional[discord.TextChannel]:
+    return await wait_for_convert(bot,ctx,commands.TextChannelConverter(),error_prompt,check,timeout)
     pass

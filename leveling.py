@@ -1,3 +1,4 @@
+from typing import Optional
 import discord
 from discord.ext import commands, tasks
 from discord.ext.commands.converter import Option
@@ -64,6 +65,15 @@ class LevelStats:
         return self.internal.get(target,(0,0))[1]
         pass
 
+    def rank(self, target : MemberId) -> int:
+        target_xp = self.xp(target)
+        people_above = 0
+        for _, xp in self.internal.values():
+            if xp > target_xp: people_above+=1
+            pass
+        return people_above + 1
+        pass
+
     def set(self, target : MemberId, xp : int, level : int,*,overwrite : bool = False) -> None:
         if not overwrite and target in self.internal.keys(): raise RuntimeError("set would have overriden a value and was stopped. If this is intentional, set overwrite to true")
         self.internal[target] = (xp,level)
@@ -89,7 +99,7 @@ class LevelStats:
     def from_raw(cls, data : dict[MemberId,tuple[int,int]]):
         obj = cls()
         for target, (xp,level) in data.items():
-            obj[target] = (xp,level)
+            obj[int(target)] = (xp,level)
             pass
 
         return obj
@@ -101,17 +111,27 @@ class LevelStats:
     pass
 
 class LevelSettings:
-    __slots__ = ("lower_gain","upper_gain","timeout", "enabled")
-    def __init__(self, enabled : bool, lower_gain : int, upper_gain : int, timeout : int):
+    __slots__ = ("lower_gain","upper_gain","timeout", "enabled", "channel_id","level_msg")
+    def __init__(
+        self, 
+        enabled : bool = Guild.level_state.default.arg, 
+        lower_gain : int = Guild.lower_xp_gain.default.arg, 
+        upper_gain : int = Guild.upper_xp_gain.default.arg, 
+        timeout : int = Guild.xp_timeout.default.arg,
+        channel_id : Optional[int] = Guild.level_channel.default,
+        level_msg : str = Guild.level_msg.default.arg
+        ):
         self.lower_gain = lower_gain
         self.upper_gain = upper_gain
         self.timeout = timeout
         self.enabled = enabled
+        self.channel_id = channel_id
+        self.level_msg = level_msg
         pass
 
     async def save(self, guild_id : GuildId):
         session : asql.AsyncSession = SESSION_FACTORY()
-        await session.execute(sql.update(Guild).where(Guild.id == str(guild_id)).values(lower_xp_gain=self.lower_gain,upper_xp_gain=self.upper_gain,xp_timeout=self.timeout))
+        await session.execute(sql.update(Guild).where(Guild.id == str(guild_id)).values(lower_xp_gain=self.lower_gain,upper_xp_gain=self.upper_gain,xp_timeout=self.timeout,level_channel=str(self.channel_id)))
         await session.commit(); await session.close()
         pass
     pass
@@ -140,7 +160,7 @@ class Leveling(commands.Cog):
         await message.channel.send(f"Geez! You leveled up to level {level}") # Actually a format string is quickest (I suspect that's because it's C)
         pass
 
-    async def reward_roles_check(message : discord.Message):
+    async def reward_roles_check(self, message : discord.Message):
         raise NotImplementedError("Wow! Reward Roles! If only there was a function that managed those!")
         pass
 
@@ -180,7 +200,7 @@ class Leveling(commands.Cog):
             sqlobj : Guild
             guild_id = int(sqlobj.id)
 
-            self.LEVEL_SETTINGS[guild_id] = LevelSettings(sqlobj.level_state, sqlobj.lower_xp_gain,sqlobj.upper_xp_gain,sqlobj.xp_timeout)
+            self.LEVEL_SETTINGS[guild_id] = LevelSettings(sqlobj.level_state, sqlobj.lower_xp_gain,sqlobj.upper_xp_gain,sqlobj.xp_timeout,sqlobj.level_channel,sqlobj.level_msg)
             pass
 
         result : CursorResult = await session.execute(sql.select(GuildLevels))
@@ -289,6 +309,9 @@ def setup(bot : commands.Bot):
     COG = Leveling()
     SESSION_FACTORY = bot.SESSION_FACTORY
     ENGINE = bot.ENGINE
+
+    BOT.DATA.LEVELS = Leveling.LEVELS
+    BOT.DATA.LEVEL_SETTINGS = Leveling.LEVEL_SETTINGS
 
     bot.add_cog(COG)
     logging.info("Loaded Leveling extension!")

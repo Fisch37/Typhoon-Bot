@@ -136,13 +136,16 @@ class ConfigBase:
         self.view.stop()
         self.view = None
 
-        await self.update()
+        # Calling the class specifically so that it doesn't call the update of any subclasses (like FactoryElement for example)
+        self.embed.clear_fields()
+        ConfigBase.update(self)
         pass
 
     async def timeout_handler(self):
         self.last_change = time.perf_counter_ns()
         while (time.perf_counter_ns() - self.last_change) < CONFIG_TIMEOUT*(10**9):
             await asyncio.sleep(1)
+            if not self.is_active: return
             pass
 
         await self.on_timeout()
@@ -255,7 +258,7 @@ class ConfigBase:
 
 @dataclasses.dataclass(init=False)
 class ConfigBranch(ConfigBase):
-    CHILDREN : set[ConfigBase] = ...
+    CHILDREN : list[ConfigBase] = ...
     active_child : Optional[ConfigBase]
     
     def __init__(self, embed : discord.Embed, message : discord.Message, guild : discord.Guild):
@@ -316,7 +319,7 @@ class ConfigElement(ConfigBase):
 
 
 
-def branch_factory(title : str,*, short_description : str, long_description : str, children : list[ConfigBranch], colour = discord.Colour.blurple(), parent : Optional[ConfigBranch] = None):
+def branch_factory(title : str,*, short_description : str, long_description : str, children : list[ConfigBase], colour = discord.Colour.blurple(), parent : Optional[ConfigBranch] = None):
     class Factory_Branch(ConfigBranch):
         TITLE = title
         SHORT_DESCR = short_description
@@ -353,7 +356,10 @@ def element_factory(
         async def on_view_interaction(self, element: discord.ui.Item, interaction: discord.Interaction):
             await super().on_view_interaction(element, interaction)
 
-            if view_interact_callback is not None: await view_interact_callback(self,element,interaction)
+            if view_interact_callback is not None and self.is_active: 
+                await view_interact_callback(self,element,interaction)
+                await self.update()
+                pass
             pass
         pass
 

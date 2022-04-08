@@ -388,6 +388,8 @@ def setup(bot : commands.Bot):
     ENGINE          = bot.ENGINE
     SESSION_FACTORY = bot.SESSION_FACTORY
     # The rest
+    bot.DATA.CLONE_OVERRIDES= Fun.CLONE_OVERRIDES
+
     bot.add_cog(Fun())
 
     with open(CONFIG.PATPAT_COLLECTION) as file:

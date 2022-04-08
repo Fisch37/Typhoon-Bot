@@ -4,6 +4,8 @@ from datetime import datetime, date, time
 
 ALLOWED_SEPERATORS = "-./: "
 
+class OutOfOrderException(BadArgument): ...
+
 def dayDecideSep(argument : str) -> str:
     for char in ALLOWED_SEPERATORS: # Loop through every possible seperator
         if argument.count(char) == 2: # If it finds the right amount of seperators (like in 2021-02-31)
@@ -101,5 +103,34 @@ class FutureTime(TimeConverter):
             pass
 
         return obj
+        pass
+    pass
+
+class DurationConverter(Converter):
+    async def convert(self, ctx : Context, argument : str) -> int:
+        def check_order(sequence : list) -> bool:
+            prev_element = None
+            for element in sequence:
+                if prev_element is not None and not prev_element < element: return False
+                prev_element = element
+                pass
+            return True
+
+        d_pos = argument.find("D")
+        h_pos = argument.find("H")
+        m_pos = argument.find("M")
+        s_pos = argument.find("S")
+
+        arg_interpret = lambda a, b: 0 if b == -1 else int(argument[(max(a+1,0)):b]) 
+
+        if not check_order([i for i in (d_pos,h_pos,m_pos,s_pos) if i != -1]):
+            raise OutOfOrderException("DHMS order not followed. This is a user error")
+            pass
+
+        try:
+            return arg_interpret(0,d_pos)*(60*60*24) + arg_interpret(d_pos,h_pos)*(60*60) + arg_interpret(h_pos,m_pos)*60 + arg_interpret(m_pos,s_pos)
+        except ValueError:
+            raise BadArgument("Number could not be interpreted")
+            pass
         pass
     pass
