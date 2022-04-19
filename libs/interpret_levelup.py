@@ -1,6 +1,5 @@
 from string import Template
 import discord
-from leveling import LevelStats # This might cause a infinite import loop...
 
 
 VAR_DESCR = (
@@ -22,7 +21,7 @@ def raw_format(template, member_name, member_nick ,member_mention, guild_name, g
     return Template(template).safe_substitute({
         "user_name"     : member_name,
         "user_nick"     : member_nick,
-        "user_mentio"   : member_mention,
+        "user_mention"   : member_mention,
         "server_name"   : guild_name,
         "server_members": guild_count,
         "level"         : level,
@@ -33,7 +32,7 @@ def raw_format(template, member_name, member_nick ,member_mention, guild_name, g
     })
     pass
 
-def format_msg(template : str, member : discord.Member, guild : discord.Guild, leaderboard : LevelStats, lvl_up_channel : discord.TextChannel, msg_channel : discord.TextChannel) -> str:
+def format_msg(template : str, member : discord.Member, guild : discord.Guild, leaderboard : "LevelStats", lvl_up_channel : discord.TextChannel, msg_channel : discord.TextChannel) -> str:
     return raw_format(
         template,
         member.name,

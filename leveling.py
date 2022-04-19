@@ -4,6 +4,7 @@ from discord.ext import commands, tasks
 from discord.ext.commands.converter import Option
 
 from libs import utils, config
+from libs.interpret_levelup import format_msg as format_lvlup_template
 from loop import loop
 import logging, random, asyncio, time
 from datetime import datetime
@@ -157,10 +158,13 @@ class Leveling(commands.Cog):
         pass
 
     async def send_levelup(self, message : discord.Message, level : int):
-        """TODO: A full implementation"""
-        logging.warn("This is not completely implemented. Custom levelup messages should be implemented as well, but aren't yet")
+        lvl_settings = self.LEVEL_SETTINGS[message.guild.id]
+        levels = self.LEVELS[message.guild.id]
 
-        await message.channel.send(f"Geez! You leveled up to level {level}") # Actually a format string is quickest (I suspect that's because it's C)
+        lvlup_channel = message.guild.get_channel(lvl_settings.channel_id)
+
+        msg = format_lvlup_template(lvl_settings.level_msg,message.author,message.guild,levels,lvlup_channel,message.channel)
+        await message.channel.send(msg)
         pass
 
     async def reward_roles_check(self, message : discord.Message):
@@ -186,8 +190,8 @@ class Leveling(commands.Cog):
         levels.raise_xp(member.id,random.randint(level_settings.lower_gain,level_settings.upper_gain)) # This also updates the level
         post_level = levels.level(member.id)
 
-        if prev_level != post_level:
-            # Doing this in relative sync for consistency (Note: With modern versions of discord.py this won't affect other on_message events as they are scheduled as tasks)
+        if True or prev_level != post_level:
+            # Doing this in relative sync for consistency (Note: With modern versions of discord.py this won't affect other on_message events since they are scheduled as tasks)
             await self.send_levelup(message,post_level)
             await self.reward_roles_check(message)
             pass
@@ -203,7 +207,14 @@ class Leveling(commands.Cog):
                 sqlobj : Guild
                 guild_id = int(sqlobj.id)
 
-                self.LEVEL_SETTINGS[guild_id] = LevelSettings(sqlobj.level_state, sqlobj.lower_xp_gain,sqlobj.upper_xp_gain,sqlobj.xp_timeout,sqlobj.level_channel,sqlobj.level_msg)
+                self.LEVEL_SETTINGS[guild_id] = LevelSettings(
+                    enabled=sqlobj.level_state, 
+                    lower_gain=sqlobj.lower_xp_gain,
+                    upper_gain=sqlobj.upper_xp_gain,
+                    timeout=sqlobj.xp_timeout,
+                    channel_id=int(sqlobj.level_channel) if sqlobj.level_channel is not None else None,
+                    level_msg=sqlobj.level_msg
+                )
                 pass
 
             result : CursorResult = await session.execute(sql.select(GuildLevels))
