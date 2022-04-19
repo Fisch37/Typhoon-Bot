@@ -8,6 +8,7 @@ from libs.interpret_levelup import format_msg as format_lvlup_template
 from loop import loop
 import logging, random, asyncio, time
 from datetime import datetime
+from moderation import RoleId
 
 from ormclasses import *
 
@@ -20,7 +21,7 @@ COG : commands.Cog = ...
 SESSION_FACTORY : asql.AsyncSession = ...
 ENGINE : asql.AsyncEngine = ...
 
-GuildId = MemberId = int
+GuildId = MemberId = RoleId = int
 
 
 # Some other stuff
@@ -140,12 +141,44 @@ class LevelSettings:
         pass
     pass
 
+class RewardRoles:
+    __slots__ = ("internal")
+    def __init__(
+        self,
+        raw : dict[RoleId,int]
+        ):
+        self.internal : dict[RoleId,int] = {int(role_id):level for role_id, level in raw.items()}
+        pass
+
+    def rewards_for_level(self,level : int) -> set[int]:
+        return {role_id for role_id, _ in filter(lambda item: item[1] == level,self.internal.items())}
+        pass
+    
+    def add_reward_role(self, role_id : int, level : int):
+        self.internal[role_id] = level
+        pass
+
+    def remove_reward_role(self, role_id : int):
+        self.internal.pop(role_id)
+        pass
+
+    async def save(self, guild_id : GuildId):
+        session = SESSION_FACTORY()
+        try:
+            await session.execute(sql.update(GuildLevels).where(GuildLevels.guild_id == str(guild_id)).values(rewards=self.internal))
+            await session.commit()
+        finally:
+            await session.close()
+        pass
+    pass
+
 ####### Cog
 
 class Leveling(commands.Cog):
     "A system which grants members points based on their activity"
     LEVELS : dict[GuildId,LevelStats] = {}
     LEVEL_SETTINGS : dict[GuildId,LevelSettings] = {}
+    REWARD_ROLES : dict[GuildId,RewardRoles] = {}
 
     def __init__(self):
         super().__init__()
@@ -161,14 +194,43 @@ class Leveling(commands.Cog):
         lvl_settings = self.LEVEL_SETTINGS[message.guild.id]
         levels = self.LEVELS[message.guild.id]
 
-        lvlup_channel = message.guild.get_channel(lvl_settings.channel_id)
+        lvlup_channel = message.guild.get_channel(lvl_settings.channel_id) if lvl_settings.channel_id is not None else message.channel
 
         msg = format_lvlup_template(lvl_settings.level_msg,message.author,message.guild,levels,lvlup_channel,message.channel)
         await message.channel.send(msg)
         pass
 
-    async def reward_roles_check(self, message : discord.Message):
-        raise NotImplementedError("Wow! Reward Roles! If only there was a function that managed those!")
+    def get_reward_role_msg(self, member : discord.Member, role : discord.Role, i : int) -> str:
+        if   i == 0: return f"Congratulations! You have leveled up and now have the role {role.name}!"
+        elif i == 1: return f"What's this? Another role! It's {role.name}!"
+        elif i == 2: return f"But wait, there's more! You receive... Another role! ({role.name})"
+        elif i == 3: return f"Now... This is kind of getting excessive. There are 4 roles now... {role.name} is the new role you get now."
+        elif i == 4: return f"Talking about excessive: There's another role you receive: {role.name}"
+        elif i == 5: return f"Okay, I'm not going to write a custom message for every role you get. I'll just list off all the roles form now on: {role.name}"
+        elif i == 19: return f"Hello! You found the secret! I do not know who would set 20 different roles for one level in any reasonable scenario, so I decided to put this secret here. So, lucky you! You found a secret! Go post it on the support server! You might get a special reward for it!"
+        else: return role.name
+        pass
+
+    async def reward_roles_check(self, message : discord.Message, level : int):
+        self.REWARD_ROLES.setdefault(message.guild.id,RewardRoles({}))
+        reward_roles = self.REWARD_ROLES[message.guild.id]
+
+        lines = []
+        roles = set()
+        for i, role_id in enumerate(reward_roles.rewards_for_level(level)):
+            role = message.guild.get_role(role_id)
+            if role is not None: 
+                roles.add(role)
+                lines.append(self.get_reward_role_msg(message.author,role,i))
+                pass
+            pass
+
+        if len(lines) > 0:
+            await message.author.add_roles(*roles,reason="Reward roles")
+
+            channel_id = self.LEVEL_SETTINGS[message.guild.id].channel_id
+            lvlup_channel = message.guild.get_channel(channel_id) if channel_id is not None else message.channel
+            await lvlup_channel.send("\n".join(lines))
         pass
 
     @commands.Cog.listener("on_message")
@@ -190,10 +252,10 @@ class Leveling(commands.Cog):
         levels.raise_xp(member.id,random.randint(level_settings.lower_gain,level_settings.upper_gain)) # This also updates the level
         post_level = levels.level(member.id)
 
-        if True or prev_level != post_level:
+        if prev_level != post_level:
             # Doing this in relative sync for consistency (Note: With modern versions of discord.py this won't affect other on_message events since they are scheduled as tasks)
             await self.send_levelup(message,post_level)
-            await self.reward_roles_check(message)
+            await self.reward_roles_check(message,post_level)
             pass
         pass
 
@@ -223,6 +285,7 @@ class Leveling(commands.Cog):
                 guild_id = int(sqlobj.guild_id)
 
                 self.LEVELS[guild_id] = LevelStats.from_raw(sqlobj.levels)
+                self.REWARD_ROLES[guild_id] = RewardRoles(sqlobj.rewards)
                 pass
         finally:
             await session.close()
@@ -244,7 +307,7 @@ class Leveling(commands.Cog):
 
         levels = self.LEVELS.get(ctx.guild.id,LevelStats())
         xp, level = levels[user.id]
-        progress = xp_to_progress(level,xp)
+        progress = round(xp_to_progress(level,xp),1)
 
         embed = discord.Embed(colour=user.colour,title=f"Leveling Stats")
         embed.set_author(name=user.display_name,icon_url=user.display_avatar.url)
@@ -320,6 +383,7 @@ def setup(bot : commands.Bot):
 
     BOT.DATA.LEVELS = Leveling.LEVELS
     BOT.DATA.LEVEL_SETTINGS = Leveling.LEVEL_SETTINGS
+    BOT.DATA.REWARD_ROLES = Leveling.REWARD_ROLES
 
     bot.add_cog(COG)
     logging.info("Loaded Leveling extension!")

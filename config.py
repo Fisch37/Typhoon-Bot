@@ -1,7 +1,7 @@
 """
 Configuration! That's all
 """
-from leveling import LevelSettings
+from leveling import LevelSettings, RewardRoles
 from libs import utils, config
 from libs.config_base import branch_factory, element_factory, ConfigElement, ConfigButton, ConfigSelect, CONFIG_TIMEOUT
 from libs.interpret_levelup import VAR_DESCR as LVL_UP_MSG_VAR_DESCR, raw_format as lvl_up_formatter
@@ -229,6 +229,11 @@ Mod_Gods.PARENT = Mod_Logging.PARENT = Mod_Automod.PARENT = Moderation
 def assure_level_settings(guild_id) -> LevelSettings:
     BOT.DATA.LEVEL_SETTINGS.setdefault(guild_id,LevelSettings())
     return BOT.DATA.LEVEL_SETTINGS[guild_id]
+    pass
+
+def assure_reward_roles(guild_id) -> RewardRoles:
+    BOT.DATA.REWARD_ROLES.setdefault(guild_id,RewardRoles({}))
+    return BOT.DATA.REWARD_ROLES[guild_id]
     pass
 
 async def update(self : ConfigElement):
@@ -583,6 +588,73 @@ Lvl_msgs = element_factory(
 
 #
 
+async def update(self : ConfigElement):
+    reward_roles = assure_reward_roles(self.ctx.guild.id)
+    inverse : dict[int,list[discord.Role]] = {}
+    for role_id, level in reward_roles.internal.items():
+        role = self.ctx.guild.get_role(role_id)
+
+        inverse.setdefault(level,[])
+        inverse[level].append(role)
+        pass
+    inverse_list = sorted(inverse.items(),key=lambda item: item[0],reverse=True)
+
+    role_strs, levels = [], []
+    for level, roles in inverse_list:
+        for role in roles:
+            role_strs.append(role.mention)
+            levels.append(str(level))
+            pass
+        pass
+
+    self.embed.clear_fields()
+    self.embed.add_field(name="Role",value="\n".join(role_strs) if len(role_strs) > 0 else "None")
+    self.embed.add_field(name="Level",value="\n".join(levels) if len(levels) > 0 else "None")
+    pass
+
+async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
+    if isinstance(element,discord.ui.Button):
+        if element.label == "Add Reward Role":
+            await interaction.followup.send("Please send a message mentioning the role you want to add as a reward role",ephemeral=True)
+            role = await utils.wait_for_role(BOT,self.ctx,"The message you sent could not be interpreted as a role. Make sure your message actually mentions the role.",timeout=CONFIG.EDIT_TIMEOUT)
+            
+            await interaction.followup.send("Now send a message containing the level you wish to reward the role at.",ephemeral=True)
+            level : int = await utils.wait_for_convert(BOT,self.ctx,utils.IntConverter(),"The message you sent is not interpretable as an integer. Please make sure your message only contains a number.",timeout=CONFIG.EDIT_TIMEOUT)
+
+            reward_roles = assure_reward_roles(self.ctx.guild.id)
+            reward_roles.add_reward_role(role.id,level)
+            await reward_roles.save(self.ctx.guild.id)
+
+            await interaction.followup.send(f"The role {role.mention} is now set to be granted once a user achieves level {level}",ephemeral=True)
+            pass
+        elif element.label == "Remove Reward Role":
+            await interaction.followup.send("Please send the message containing the role you want to remove as a reward role",ephemeral=True)
+            role = await utils.wait_for_role(BOT,self.ctx,"The message you sent could not be interpreted as a role. Check that you are actually mentioning the role.",timeout=CONFIG.EDIT_TIMEOUT)
+            
+            reward_roles = assure_reward_roles(self.ctx.guild.id)
+            reward_roles.remove_reward_role(role.id)
+            await reward_roles.save(self.ctx.guild.id)
+
+            await interaction.followup.send(f"Removed the reward role for {role.mention}!",ephemeral=True)
+            pass
+        pass
+    pass
+
+Lvl_rewards = element_factory(
+    "Reward Roles",
+    short_description="Roles that get added to a user when they level up",
+    long_description="Reward Roles are roles that get rewarded to a user once they have achieved a certain level. Here you can configure these roles.",
+    colour = discord.Colour.brand_green(),
+    update_callback=update,
+    view_interact_callback=on_interaction,
+    options=[
+        ConfigButton(discord.ButtonStyle.green,"Add Reward Role"),
+        ConfigButton(discord.ButtonStyle.red,"Remove Reward Role")
+    ]
+)
+
+#
+
 Leveling = branch_factory(
     "Leveling",
     short_description="Settings for the Leveling feature",
@@ -592,10 +664,11 @@ Leveling = branch_factory(
         Lvl_state,
         Lvl_xp,
         Lvl_timeout,
+        Lvl_rewards,
         Lvl_msgs
     ]
 )
-Lvl_state.PARENT = Lvl_xp.PARENT = Lvl_timeout.PARENT = Lvl_msgs.PARENT = Leveling
+Lvl_state.PARENT = Lvl_xp.PARENT = Lvl_timeout.PARENT = Lvl_rewards.PARENT = Lvl_msgs.PARENT = Leveling
 
 ####
 
