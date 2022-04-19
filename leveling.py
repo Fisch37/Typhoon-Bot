@@ -28,7 +28,7 @@ level_to_xp = lambda level: int((5*level**3)/3 + (45/2)*level**2+(455/6)*level)
 """But why are you not solving for the xp and then check for the level the current xp will give?
 Because: https://www.wolframalpha.com/input/?i=solve+for+x+in+y%3D%285%2F6%29*x%5E3+%2B+%2845%2F2%29*x%5E2+%2B+%28455%2F6%29*x
 Please send a working version in, if you have one"""
-xp_to_progress = lambda level, xp: round(((xp - level_to_xp(level)) / (level_to_xp(level+1) - level_to_xp(level)))*100)
+xp_to_progress = lambda level, xp: (((xp - level_to_xp(level)) / (level_to_xp(level+1) - level_to_xp(level)))*100)
 
 class LevelStats:
     __slots__ = ("internal","timestamps")
@@ -259,19 +259,14 @@ class Leveling(commands.Cog):
 
         embed = discord.Embed(colour = discord.Colour.green(),title=f"Leaderboard of {ctx.guild.name}",timestamp=datetime.utcnow())
         if len(sorted_iter) > 0:
-            target_list = []
-            level_list = []
-            xp_list = []
-            for target, (xp, level) in sorted_iter:
-                target_list.append(f"<@{target}>") # I did a smart thing!
-                # Format strings are quick, I found out
-                level_list.append(f"{level}")
-                xp_list.append(f"{xp} ({xp_to_progress(level,xp)}%)")
+            lines = []
+            for i, (target, (xp, level)) in enumerate(sorted_iter):
+                level_str = str(level)
+                xp_string = str(xp)
+                progress_string = str(round(xp_to_progress(level,xp),1)).zfill(4)
+                lines.append(f"{i+1}. <@{target}> (Level {level_str} | {xp_string}xp) ({progress_string}%)")
                 pass
-
-            embed.add_field(name="Member",value="\n".join(target_list))
-            embed.add_field(name="Level",value="\n".join(level_list))
-            embed.add_field(name="XP",value="\n".join(xp_list))
+            embed.description = "\n".join(lines)
         else:
             embed.description = "It's empty here... Just a vast nothingness"
 
