@@ -464,14 +464,13 @@ async def update(self : ConfigElement):
 async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
     if isinstance(element,discord.ui.Button):
         if element.label == "Set Message":
-            embed = discord.Embed(colour=discord.Colour.brand_green(),title="Variables")
+            list_assembles = []
+            for var_name, var_descr in LVL_UP_MSG_VAR_DESCR:
+                list_assembles.append(f"[{var_name}]\n\t{var_descr}")
+                pass
+            markdown = "```css\n{}```".format('\n'.join(list_assembles))
             
-            var_names, var_descr = zip(*LVL_UP_MSG_VAR_DESCR)
-            embed.add_field(name="Variables",value="\n".join(var_names))
-            embed.add_field(name="Description",value="\n".join(var_descr))
-            # TODO: Fix misalignment of descriptions when using multiple lines
-            
-            await interaction.followup.send("Please send the message template you want to apply. Below is a list of variables that will be applied. A variable must always be surrounded by {}",embed=embed,ephemeral=True)
+            await interaction.followup.send("Please send the message template you want to apply. Below is a list of variables that will be applied. A variable must always be surrounded by {}" + markdown,ephemeral=True)
 
             while True:
                 msg : discord.Message = await BOT.wait_for("message",check=lambda msg: msg.channel == self.ctx.channel and msg.author == self.ctx.author)
