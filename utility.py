@@ -749,7 +749,6 @@ class Utility(commands.Cog):
     @vote.command(name="restrict",brief="Restrict who can create votes and where that may be done. This will open an editor.")
     @utils.perm_message_check("Managing votes is not up to you... (No Permission [need Manage Server])",manage_guild=True)
     async def restrict_votes(self, ctx : commands.Context):
-        """TODO: Make sql requests more efficient (there are commands for JSON objects, I think)"""
         justThis = lambda msg: msg.author == ctx.author and msg.channel == ctx.channel
 
         async def assemble_override_fields(role_not_channel : bool = False):

@@ -119,7 +119,6 @@ async def update(self : ConfigElement):
     pass
 
 async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
-    """TODO: Add functionality!"""
     if isinstance(element,discord.ui.Select):
         logging_settings = BOT.DATA.LOGGING_SETTINGS[self.ctx.guild.id] = LoggingSettings()
         for value in element.values:

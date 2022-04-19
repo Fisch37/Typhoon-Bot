@@ -573,7 +573,7 @@ class Moderation(commands.Cog):
         messages = min(messages,CONFIG.MSG_PURGE_LIM)
         await ctx.channel.purge(limit=messages)
 
-        await ctx.send("Deleted {} message(s)! :white_check_mark:".format(messages),ephemeral=True)
+        await ctx.send(f"Deleted {messages} message(s)! :white_check_mark:",ephemeral=True)
         pass
 
     ## Role exceptions
