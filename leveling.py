@@ -131,8 +131,11 @@ class LevelSettings:
 
     async def save(self, guild_id : GuildId):
         session : asql.AsyncSession = SESSION_FACTORY()
-        await session.execute(sql.update(Guild).where(Guild.id == str(guild_id)).values(lower_xp_gain=self.lower_gain,upper_xp_gain=self.upper_gain,xp_timeout=self.timeout,level_channel=str(self.channel_id)))
-        await session.commit(); await session.close()
+        try:
+            await session.execute(sql.update(Guild).where(Guild.id == str(guild_id)).values(lower_xp_gain=self.lower_gain,upper_xp_gain=self.upper_gain,xp_timeout=self.timeout,level_channel=str(self.channel_id)))
+            await session.commit()
+        finally:
+            await session.close()
         pass
     pass
 
@@ -194,24 +197,24 @@ class Leveling(commands.Cog):
     @utils.call_once_async
     async def leveling_collector(self):
         session : asql.AsyncSession = SESSION_FACTORY()
+        try:
+            result : CursorResult = await session.execute(sql.select(Guild))
+            for sqlobj in result.scalars():
+                sqlobj : Guild
+                guild_id = int(sqlobj.id)
 
-        result : CursorResult = await session.execute(sql.select(Guild))
-        for sqlobj in result.scalars():
-            sqlobj : Guild
-            guild_id = int(sqlobj.id)
+                self.LEVEL_SETTINGS[guild_id] = LevelSettings(sqlobj.level_state, sqlobj.lower_xp_gain,sqlobj.upper_xp_gain,sqlobj.xp_timeout,sqlobj.level_channel,sqlobj.level_msg)
+                pass
 
-            self.LEVEL_SETTINGS[guild_id] = LevelSettings(sqlobj.level_state, sqlobj.lower_xp_gain,sqlobj.upper_xp_gain,sqlobj.xp_timeout,sqlobj.level_channel,sqlobj.level_msg)
-            pass
+            result : CursorResult = await session.execute(sql.select(GuildLevels))
+            for sqlobj in result.scalars():
+                sqlobj : GuildLevels
+                guild_id = int(sqlobj.guild_id)
 
-        result : CursorResult = await session.execute(sql.select(GuildLevels))
-        for sqlobj in result.scalars():
-            sqlobj : GuildLevels
-            guild_id = int(sqlobj.guild_id)
-
-            self.LEVELS[guild_id] = LevelStats.from_raw(sqlobj.levels)
-            pass
-
-        await session.close()
+                self.LEVELS[guild_id] = LevelStats.from_raw(sqlobj.levels)
+                pass
+        finally:
+            await session.close()
         pass
 
 
@@ -259,19 +262,16 @@ class Leveling(commands.Cog):
             target_list = []
             level_list = []
             xp_list = []
-            progress_list = []
             for target, (xp, level) in sorted_iter:
                 target_list.append(f"<@{target}>") # I did a smart thing!
                 # Format strings are quick, I found out
                 level_list.append(f"{level}")
-                xp_list.append(f"{xp}")
-                progress_list.append(f"{xp_to_progress(level,xp)}%")
+                xp_list.append(f"{xp} ({xp_to_progress(level,xp)}%)")
                 pass
 
             embed.add_field(name="Member",value="\n".join(target_list))
             embed.add_field(name="Level",value="\n".join(level_list))
             embed.add_field(name="XP",value="\n".join(xp_list))
-            embed.add_field(name="Progress",value="\n".join(progress_list))
         else:
             embed.description = "It's empty here... Just a vast nothingness"
 
@@ -281,19 +281,21 @@ class Leveling(commands.Cog):
     @tasks.loop(minutes=1,loop=loop)
     async def sql_saver_task(self):
         session : asql.AsyncSession = SESSION_FACTORY()
-        for guild_id, stats in self.LEVELS.items():
-            sqlobj : GuildLevels = (await session.execute(sql.select(GuildLevels).where(GuildLevels.guild_id == str(guild_id)))).scalar_one_or_none()
-            if sqlobj is None:
-                sqlobj = GuildLevels(guild_id=str(guild_id))
-                sqlobj.levels = stats.to_raw()
-                session.add(sqlobj)
+        try:
+            for guild_id, stats in self.LEVELS.items():
+                sqlobj : GuildLevels = (await session.execute(sql.select(GuildLevels).where(GuildLevels.guild_id == str(guild_id)))).scalar_one_or_none()
+                if sqlobj is None:
+                    sqlobj = GuildLevels(guild_id=str(guild_id))
+                    sqlobj.levels = stats.to_raw()
+                    session.add(sqlobj)
+                    pass
+                else:
+                    sqlobj.levels = stats.to_raw()
+                    pass
+                await session.commit()
                 pass
-            else:
-                sqlobj.levels = stats.to_raw()
-                pass
-            await session.commit()
-            pass
-        await session.close()
+        finally:
+            await session.close()
         pass
     pass
 

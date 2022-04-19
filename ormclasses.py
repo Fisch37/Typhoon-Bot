@@ -34,6 +34,7 @@ class Guild(Base):
     
     reaction_roles          = sql.Column(MutableListType,                                    nullable=False,default=[])
     vote_permissions        = sql.Column(mutable_json_type(sql.JSON,True),                   nullable=False,default=sqlalchemy_json.NestedMutableDict())
+    votes                   = sql.Column(MutableListType,                                    nullable=False,default=[])
     integrations            = sql.Column(mutable_json_type(sql.JSON,True),                   nullable=False,default={})
     announcement_override   = sql.Column(sql.String(20),                                     nullable=True )
     mute_role_id            = sql.Column(sql.String(20),                                     nullable=True )

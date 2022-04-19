@@ -35,7 +35,7 @@ async def close_confirm(interaction : discord.Interaction):
 
     await interaction.response.send_message("Are you certain you want to close this interaction?",view=close_confirm_view,ephemeral=True)
     await close_confirm_view.wait()
-    return will_close
+    return will_close[0]
     pass
 
 # View Options preperation

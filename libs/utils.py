@@ -1,4 +1,5 @@
 import logging, os, asyncio
+import threading
 from typing import *
 from datetime import datetime
 
@@ -231,6 +232,29 @@ async def get_guild(session : asql.AsyncSession, guild_id : int) -> Guild:
         pass
 
     return sql_guild
+    pass
+
+def generate_snowflake(*,__inc__ = [0]): # __inc__ is a list because that means it will be stored across execution
+    """Generates a snowflake according to https://discord.com/developers/docs/reference#snowflakes"""
+    if not isinstance(__inc__[0],int): raise TypeError("Cached increment is not a string. You probably set it as something else. Don't")
+
+    raw_binary = lambda n: bin(n)[2:] # Does not include 0b prefix
+
+    # Get Unix Epoch
+    utc_time = datetime.utcnow()
+    unix_millis = utc_time.timestamp()*1000
+    
+    discord_epoch = unix_millis - 1420070400000 # Discord Epoch is counting first second since 2015
+    internal_process_id = 31 # Setting to 31 because it is not possible according to Discord's docs, meaning this will not occur as a snowflake from discord
+    internal_worker_id  = 31 # Same as above
+
+    snowflake = eval("0b" + raw_binary(discord_epoch) + raw_binary(internal_process_id) + raw_binary(internal_worker_id) + raw_binary(__inc__[0]))
+    # This uses eval and is therefore a potential issue. But, the only possible input is __inc__[0] which can only be an integer
+
+    __inc__[0] += 1
+    __inc__[0] %= 2**12
+
+    return snowflake
     pass
 
 class IntConverter(commands.Converter):

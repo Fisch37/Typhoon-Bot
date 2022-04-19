@@ -79,32 +79,37 @@ def formatActivity(activity : discord.Activity):
     return discord.Activity(type=activity.type,name=name)
 
 class VoteView(discord.ui.View):
-    def __init__(self,vote_duration : int,vote_options : list[str], author : discord.Member):
+    def __init__(self,vote_duration : int,vote_options : list[str], author : discord.Member, option_ids : list[int] = None):
         super().__init__(timeout=vote_duration)
+        self.vote_ends_on = datetime.utcnow().timestamp() + vote_duration
         self.option_votes : dict[int,int] = {} # Member_id : Vote_index (Will ensure every user only casts one vote)
-        self.options : list[str] = vote_options
+        self.options : list[tuple[str,int]] = []
         self.author = author
-
-        for i in range(len(vote_options)):
-            option = vote_options[i]
-
+        
+        if option_ids is None: option_ids = [None]*len(vote_options)
+        for i, (option,snowflake_id) in enumerate(zip(vote_options,option_ids)):
             async def button_callback(interaction : discord.Interaction):
                 self.option_votes[interaction.user.id] = i # Update user's vote
                 await interaction.response.send_message("Thank you for your vote! You may override your choice at any time!",ephemeral=True)
                 pass
 
+            if snowflake_id is None: snowflake_id = utils.generate_snowflake()
+
             button = discord.ui.Button( # Create Button obj
                 style=discord.ButtonStyle.gray,
                 label=option,
-                row=0
+                row=0,
+                custom_id=snowflake_id
             )
             button.callback = button_callback # Set callback
             self.add_item(button) # Add to the view
+
+            self.options.append((option,snowflake_id))
             pass
         pass
 
     async def on_timeout(self):
-        logging.info("TIMEOUT!")
+        # Everything is handled in self.handle_process, so nothing occurs here
         pass
 
     @discord.ui.button(label="Withdraw vote",style=discord.ButtonStyle.blurple,row=1)
@@ -161,8 +166,22 @@ class VoteView(discord.ui.View):
         else:
             resultString = "No one participated"
 
-        self.embed.set_footer(text="".join(("Vote has ended." if ended_regularly else "Vote was ended prematurely." ," Results:\n",resultString)))
+        self.embed.set_footer(text="".join(("Vote has ended." if ended_regularly else "Vote was ended prematurely." ,"\nResults:\n\t",resultString)))
         await self.message.edit(embed=self.embed)
+
+        # Removing vote from database since it is now over
+        session = SESSION_FACTORY()
+        try:
+            sql_guild = await utils.get_guild(session,self.message.guild.id)
+            raw_vote = None
+            for raw_vote in sql_guild.votes: # Looks for the first entry matching this message and uses it. Otherwise it results in None
+                if raw_vote["message"] == (self.message.guild.id,self.message.channel.id,self.message.id): 
+                    break
+                pass
+            if raw_vote is not None: sql_guild.votes.remove(raw_vote)
+            await session.commit()
+        finally:
+            await session.close()
         pass
 
     async def set_message(self, message : discord.Message, embed : discord.Embed):
@@ -170,6 +189,39 @@ class VoteView(discord.ui.View):
         self.embed = embed
 
         await self.message.edit(view=self)
+        pass
+
+    def to_dict(self) -> dict:
+        return {
+            "votes":self.option_votes.copy(),
+            "options":self.options.copy(),
+            "author":self.author.id,
+            "vote_ends_on":self.vote_ends_on,
+            "message":(self.message.guild.id,self.message.channel.id,self.message.id)
+        }
+        pass
+
+    async def from_dict(cls : "VoteView", src : dict) -> "VoteView":
+        raw_votes : dict[int, int] = src["votes"] # This is mapping MemberId:vote_index
+        raw_options : list[tuple[str,int]] = src["options"] # This is (OptionName,OptionSnowflake)
+        author_id : int = src["author"]
+        vote_ends_on : float = src["vote_ends_on"]
+        guild_id, channel_id, message_id = src["message"]
+
+        guild = BOT.get_guild(guild_id)
+        message : discord.Message = await guild.get_channel(channel_id).fetch_message()
+        author = await guild.fetch_member(author_id)
+
+        vote_duration = vote_ends_on - datetime.utcnow().timestamp()
+        
+        options, option_ids = zip(*raw_options) # Unzipping
+
+
+        obj : VoteView = cls(vote_duration,options,author,option_ids)
+        obj.option_votes = raw_votes.copy()
+        await obj.set_message(message,message.embeds[0])
+
+        asyncio.create_task(obj.handle_process())
         pass
     pass
 
@@ -190,11 +242,11 @@ async def vote_message_converter(ctx, message : str) -> int:
 
 async def check_vote_perms(member : discord.Member, channel_id : int, guild_id : int) -> bool:
     session : asql.AsyncSession = SESSION_FACTORY()
-
-    result : CursorResult = await session.execute(sql.select(Guild.vote_permissions).where(Guild.id==str(guild_id)))
-    vote_permissions : dict = result.scalar_one_or_none()
-
-    await session.close()
+    try:
+        result : CursorResult = await session.execute(sql.select(Guild.vote_permissions).where(Guild.id==str(guild_id)))
+        vote_permissions : dict = result.scalar_one_or_none()
+    finally:
+        await session.close()
 
     if vote_permissions is None:
         return True
@@ -240,6 +292,10 @@ class Utility(commands.Cog):
     def __init__(self):
         super().__init__()
 
+        # Run once
+        self.schedule_msg_collector.start()
+        self.vote_collector.start()
+        # Run in loop
         self.schedule_msg_worker.start()
         self.activity_changer.start()
         pass
@@ -320,9 +376,11 @@ class Utility(commands.Cog):
             pass
 
         session : asql.AsyncSession = SESSION_FACTORY() # Create new session
-        await session.execute(sql.update(Guild).values(announcement_override=str(channel.id)).where(Guild.id==str(ctx.guild.id))) # Set new override
-        await session.commit() # Commit & Close
-        await session.close()
+        try:
+            await session.execute(sql.update(Guild).values(announcement_override=str(channel.id)).where(Guild.id==str(ctx.guild.id))) # Set new override
+            await session.commit() # Commit & Close
+        finally:
+            await session.close()
 
         await ctx.send(f"Override set. Bot Announcements will now be sent to {channel.mention}",ephemeral=True)
         pass
@@ -358,8 +416,8 @@ class Utility(commands.Cog):
         colour_converter = commands.ColourConverter()
         # Apply arguments if given
         if title is not None: embed.title = title
-        if description is not None: vote_description = description
-        else: vote_description = ""
+        if description is not None: set_vote_description = description
+        else: set_vote_description = ""
         if colour is not None:
             try:
                 embed.colour = await colour_converter.convert(ctx,colour)
@@ -379,7 +437,7 @@ class Utility(commands.Cog):
         edit_message : discord.Message = ...
         class EditView(discord.ui.View):
             vote_duration : int = None
-            vote_description : str = vote_description
+            vote_description : str = set_vote_description
 
             def getDiscordTimestamp(self) -> str:
                 if self.vote_duration is not None:
@@ -404,7 +462,7 @@ class Utility(commands.Cog):
                 utils.set_component_state_recursive(self,True)
                 pass
 
-            async def interaction_check(self, interaction: discord.Interaction) -> bool:
+            async def interaction_check(self, item, interaction: discord.Interaction) -> bool:
                 return interaction.user == ctx.author
                 pass
 
@@ -499,7 +557,7 @@ class Utility(commands.Cog):
                                 pass
                             pass
 
-                        async def interaction_check(self, interaction: discord.Interaction) -> bool:
+                        async def interaction_check(self, item, interaction: discord.Interaction) -> bool:
                             return interaction.user == ctx.author
                             pass
 
@@ -514,7 +572,7 @@ class Utility(commands.Cog):
                             leaveButton  = utils.getButtonByLabel(self,"Leave this submenu") # Still bad
 
                             removeButton.disabled = leaveButton.disabled = True # Disable other control buttons
-                            await option_message.edit("```\nPlease send a message with the title for the option you wish to add```",view=self)
+                            await option_message.edit(content="```\nPlease send a message with the title for the option you wish to add```",view=self)
 
                             while True:
                                 option_name_msg : discord.Message = await BOT.wait_for("message",check=justThis)
@@ -547,7 +605,7 @@ class Utility(commands.Cog):
                             leaveButton = utils.getButtonByLabel(self,"Leave this submenu")
 
                             addButton.disabled = leaveButton.disabled = True # Disable other control buttons
-                            await option_message.edit("```\nPlease send a message with the title of the option you wish to remove```",view=self)
+                            await option_message.edit(content="```\nPlease send a message with the title of the option you wish to remove```",view=self)
 
                             while True:
                                 option_name_msg : discord.Message = await BOT.wait_for("message",check=justThis)
@@ -569,7 +627,7 @@ class Utility(commands.Cog):
 
                         @discord.ui.button(label="Leave this submenu",style=discord.ButtonStyle.primary,row=1)
                         async def option_leave(self, button : discord.ui.Button, interaction : discord.Interaction):
-                            await option_message.edit("This submenu has been closed",embed=None,view=None) # Remove the embed and the interaction system
+                            await option_message.edit(content="This submenu has been closed",embed=None,view=None) # Remove the embed and the interaction system
                             self.stop() # Stop the view (saves some RAM and is good behaviour)
                             pass
                         pass
@@ -599,6 +657,12 @@ class Utility(commands.Cog):
                 vote_view = VoteView(self.vote_duration,vote_options,ctx.author)
                 vote_message = await channel.send(embed=embed,view=vote_view)
                 await vote_view.set_message(vote_message,embed)
+
+                # Adding vote to database to allow for recovery after a bot restart
+                session = SESSION_FACTORY()
+                sql_guild = await utils.get_guild(session,ctx.guild.id)
+                sql_guild.votes.append(vote_view.to_dict())
+                await session.commit(); await session.commit()
 
                 await edit_message.edit(content="Vote message created! :white_check_mark:",embed=None,view=None)
                 self.stop()
@@ -736,7 +800,7 @@ class Utility(commands.Cog):
                 super().__init__(timeout=CONFIG.EDIT_TIMEOUT)
                 pass
 
-            async def interaction_check(view, interaction: discord.Interaction) -> bool: # Only allow interaction from the author
+            async def interaction_check(view, item, interaction: discord.Interaction) -> bool: # Only allow interaction from the author
                 return interaction.user == ctx.author
             
             async def on_timeout(view) -> None:
@@ -1028,17 +1092,19 @@ class Utility(commands.Cog):
             
             @discord.ui.button(label="Close this editor",style=discord.ButtonStyle.danger,row=2)
             async def close_editor(view, button : discord.ui.Button, interaction : discord.Interaction):
-                view.stop()
                 await main_message.edit("```\nEditor was closed```",view=None,embed=None)
                 await interaction.response.defer()
 
                 await session.commit()
-                await session.close()
+                view.stop()
                 pass
             pass
 
         view = Restrictor()
         main_message = await ctx.send(embed=main_embed,view=view,ephemeral=True)
+        
+        await view.wait()
+        await session.close()
         pass
     
     @tasks.loop(minutes=5)
@@ -1089,16 +1155,19 @@ class Utility(commands.Cog):
 
         async def sql_write(message_id : MessageId, emoji : discord.PartialEmoji, guild_id : GuildId, role_id : RoleId):
             session : asql.AsyncSession = SESSION_FACTORY()
-            result : CursorResult = await session.execute(sql.select(ReactionRoles).where(ReactionRoles.message_id == str(message_id)))
-            
-            sql_object : ReactionRoles = result.scalar_one_or_none()
-            if sql_object is None: # Create new object if it didn't exist yet
-                sql_object = ReactionRoles(message_id=str(message_id),react_roles={})
-                session.add(sql_object)
-                pass
-            sql_object.react_roles[str(emoji)] = (guild_id,role_id) # Create entry for this reaction role
-            
-            await session.commit(); await session.close() # Close SQL Session
+            try:
+                result : CursorResult = await session.execute(sql.select(ReactionRoles).where(ReactionRoles.message_id == str(message_id)))
+                
+                sql_object : ReactionRoles = result.scalar_one_or_none()
+                if sql_object is None: # Create new object if it didn't exist yet
+                    sql_object = ReactionRoles(message_id=str(message_id),react_roles={})
+                    session.add(sql_object)
+                    pass
+                sql_object.react_roles[str(emoji)] = (guild_id,role_id) # Create entry for this reaction role
+                
+                await session.commit()
+            finally:
+                await session.close() # Close SQL Session
             pass
 
         async def commit_rr(message : discord.Message, guild : discord.Guild, emoji : discord.PartialEmoji, role : discord.Role):
@@ -1347,16 +1416,19 @@ class Utility(commands.Cog):
 
         async def sql_write(message_id : MessageId, emoji : discord.PartialEmoji):
             session : asql.AsyncSession = SESSION_FACTORY()
-            result : CursorResult = await session.execute(sql.select(ReactionRoles).where(ReactionRoles.message_id == str(message_id)))
-            
-            sql_object : ReactionRoles = result.scalar_one_or_none()
-            if sql_object is None: # Create new object if it didn't exist yet
-                sql_object = ReactionRoles(message_id=str(message_id),react_roles={})
-                session.add(sql_object)
-                pass
-            sql_object.react_roles.pop(str(emoji)) # Remove entry for this reaction
-            
-            await session.commit(); await session.close() # Close SQL Session
+            try:
+                result : CursorResult = await session.execute(sql.select(ReactionRoles).where(ReactionRoles.message_id == str(message_id)))
+                
+                sql_object : ReactionRoles = result.scalar_one_or_none()
+                if sql_object is None: # Create new object if it didn't exist yet
+                    sql_object = ReactionRoles(message_id=str(message_id),react_roles={})
+                    session.add(sql_object)
+                    pass
+                sql_object.react_roles.pop(str(emoji)) # Remove entry for this reaction
+                
+                await session.commit()
+            finally:
+                await session.close() # Close SQL Session
             pass
 
         origin_msg : discord.Message = ...
@@ -1467,39 +1539,43 @@ class Utility(commands.Cog):
         """Collects all the reaction roles saved in the database and stores them in RAM"""
         session : asql.AsyncSession = SESSION_FACTORY()
 
-        result : CursorResult = await session.execute(sql.select(ReactionRoles))
-        all_reactionroles : list[ReactionRoles] = result.scalars().all() # Get all reaction role objects
+        try:
+            result : CursorResult = await session.execute(sql.select(ReactionRoles))
+            all_reactionroles : list[ReactionRoles] = result.scalars().all() # Get all reaction role objects
 
-        for reaction_roles in all_reactionroles:
-            message_id = int(reaction_roles.message_id)
-            react_roles : ReactionRoleDict = reaction_roles.react_roles
+            for reaction_roles in all_reactionroles:
+                message_id = int(reaction_roles.message_id)
+                react_roles : ReactionRoleDict = reaction_roles.react_roles
 
-            # This could have been done in a dictionary comprehension, but, seeing as I do in fact have a soul and would like to keep my sanity, it wasn't done here.
-            # Although if you really need it: {discord.PartialEmoji.from_str(emoji_str):BOT.get_guild(guild_id).get_role(role_id) for emoji_str, (guild_id, role_id) in react_roles}
-            # I told you it would be horrible
-            converted_react_roles = {}
-            for emoji_str, (guild_id, role_id) in react_roles.items():
+                # This could have been done in a dictionary comprehension, but, seeing as I do in fact have a soul and would like to keep my sanity, it wasn't done here.
+                # Although if you really need it: {discord.PartialEmoji.from_str(emoji_str):BOT.get_guild(guild_id).get_role(role_id) for emoji_str, (guild_id, role_id) in react_roles}
+                # I told you it would be horrible
+                converted_react_roles = {}
+                for emoji_str, (guild_id, role_id) in react_roles.items():
 
-                guild = BOT.get_guild(guild_id)
-                role = guild.get_role(role_id)
-                partial_emoji = discord.PartialEmoji.from_str(emoji_str)
+                    guild = BOT.get_guild(guild_id)
+                    role = guild.get_role(role_id)
+                    partial_emoji = discord.PartialEmoji.from_str(emoji_str)
 
-                converted_react_roles[partial_emoji] = role
+                    converted_react_roles[partial_emoji] = role
+                    pass
+
+                self.REACTION_ROLES[message_id] = converted_react_roles
                 pass
 
-            self.REACTION_ROLES[message_id] = converted_react_roles
-            pass
-
-        await session.close()
+        finally:
+            await session.close()
         pass
 
     # Message Webhooks
 
     async def getTimeZone(self, guild_id : int):
         session : asql.AsyncSession = SESSION_FACTORY()
-        result : CursorResult = await session.execute(sql.select(Guild.timezone).where(Guild.id == str(guild_id)))
-        timezone_text = result.scalar_one_or_none()
-        await session.close()
+        try:
+            result : CursorResult = await session.execute(sql.select(Guild.timezone).where(Guild.id == str(guild_id)))
+            timezone_text = result.scalar_one_or_none()
+        finally:
+            await session.close()
         if timezone_text is None:
             timezone_text = "0"
             pass
@@ -1535,20 +1611,23 @@ class Utility(commands.Cog):
             pass
 
         session : asql.AsyncSession = SESSION_FACTORY()
-        result : CursorResult = await session.execute(sql.select(ScheduledMessages).where(ScheduledMessages.guild_id == str(ctx.guild.id)))
-        scheduled_obj : ScheduledMessages = result.scalar_one_or_none()
-        if scheduled_obj is None:
-            scheduled_obj = ScheduledMessages(guild_id=str(ctx.guild.id),schedules=[])
-            session.add(scheduled_obj)
-            pass
+        try:
+            result : CursorResult = await session.execute(sql.select(ScheduledMessages).where(ScheduledMessages.guild_id == str(ctx.guild.id)))
+            scheduled_obj : ScheduledMessages = result.scalar_one_or_none()
+            if scheduled_obj is None:
+                scheduled_obj = ScheduledMessages(guild_id=str(ctx.guild.id),schedules=[])
+                session.add(scheduled_obj)
+                pass
 
-        self.SCHEDULED_MSGS.setdefault(ctx.guild.id,[]) # Create an entry in the SCHEDULED_MSGS RAM dict for this guild if there wasn't one already
+            self.SCHEDULED_MSGS.setdefault(ctx.guild.id,[]) # Create an entry in the SCHEDULED_MSGS RAM dict for this guild if there wasn't one already
 
-        scheduled_msg = (timeObj.timestamp(),ctx.channel.id,content,(ctx.author.display_name,ctx.author.avatar.url)) # Create scheduled_msg object
-        scheduled_obj.schedules.append(scheduled_msg) # Add new scheduled Message to Database
-        self.SCHEDULED_MSGS[ctx.guild.id].append(scheduled_msg) # Add scheduled msg to RAM
-        
-        await session.commit(); await session.close() # Commit & Close
+            scheduled_msg = (timeObj.timestamp(),ctx.channel.id,content,(ctx.author.display_name,ctx.author.avatar.url)) # Create scheduled_msg object
+            scheduled_obj.schedules.append(scheduled_msg) # Add new scheduled Message to Database
+            self.SCHEDULED_MSGS[ctx.guild.id].append(scheduled_msg) # Add scheduled msg to RAM
+            
+            await session.commit()
+        finally:
+            await session.close() # Commit & Close
         await ctx.send(
             "".join(("Scheduled following message to be sent on <t:{}>:\n".format(int(timeObj.timestamp())),content)),
             ephemeral=True
@@ -1563,6 +1642,18 @@ class Utility(commands.Cog):
         await ctx.send("Your message has been sent! (As you no doubt see)",ephemeral=True) # Send confirmation to prevent "interaction failed" error
         pass
 
+    
+
+    @tasks.loop(count=1)
+    async def vote_collector(self):
+        session : asql.AsyncSession = SESSION_FACTORY()
+        for sql_guild in await session.execute(sql.select(Guild)):
+            sql_guild : Guild
+            for raw_vote in sql_guild.votes:
+                vote_view = await VoteView.from_dict(VoteView,raw_vote)
+                pass
+            pass
+        pass
 
     """
     But why didn't you create a type alias for the scheduled_msg?! You're repeating yourself so much!
@@ -1570,26 +1661,26 @@ class Utility(commands.Cog):
     Becauuuuuuuse my IDE wouldn't show me what the scheduled_msg is made up of and only that it is one, which is not really helpful
     (in hindsight I was wrong about that, but I'm lazy and also I feel as soon as I touch my code it just falls apart)
     """
-    @commands.Cog.listener("on_ready")
-    @utils.call_once_async
+    @tasks.loop(count=1) # Rapptz told me not to use on_ready
     async def schedule_msg_collector(self):
         """Collects scheduled messages from the SQL Server
         Can be a little slow, just shouldn't cause much overhead on the server"""
         session : asql.AsyncSession = SESSION_FACTORY()
-        for guild in BOT.guilds:
-            result : CursorResult = await session.execute(sql.select(ScheduledMessages).where(ScheduledMessages.guild_id==str(guild.id)))
+        try:
+            for guild in BOT.guilds:
+                result : CursorResult = await session.execute(sql.select(ScheduledMessages).where(ScheduledMessages.guild_id==str(guild.id)))
 
-            try:
-                scheduled_msgs : list[list[Timestamp,ChannelId,str,tuple[MemberName,AvatarUrl]]] = result.scalar_one().schedules
-            except NoResultFound: # When there is no entry for this guild, jump to the next one
-                continue
+                try:
+                    scheduled_msgs : list[list[Timestamp,ChannelId,str,tuple[MemberName,AvatarUrl]]] = result.scalar_one().schedules
+                except NoResultFound: # When there is no entry for this guild, jump to the next one
+                    continue
+                    pass
+
+                self.SCHEDULED_MSGS.setdefault(guild.id,[])
+                self.SCHEDULED_MSGS[guild.id].extend(scheduled_msgs)
                 pass
-
-            self.SCHEDULED_MSGS.setdefault(guild.id,[])
-            self.SCHEDULED_MSGS[guild.id].extend(scheduled_msgs)
-            pass
-
-        await session.close()
+        finally:
+            await session.close()
         pass
 
     @tasks.loop(minutes=1,loop=loop)
@@ -1612,11 +1703,6 @@ class Utility(commands.Cog):
         due_messages = await asyncio.gather(*[find_due_messages(guild_id) for guild_id in self.SCHEDULED_MSGS.keys()])
         if sum([len(messages) for _, messages in due_messages]) == 0: return # Skip all the rest if there aren't any due messages
         
-        session : asql.AsyncSession = SESSION_FACTORY()
-        # Get all SQL Database entries for scheduled messages
-        required_guilds = [str(guild_id) for guild_id in list(zip(*due_messages))[0]]
-        result : CursorResult = (await session.execute(sql.select(ScheduledMessages).where(ScheduledMessages.guild_id.in_(required_guilds))))
-        sql_msgs : dict[GuildId,ScheduledMessages] = {int(scalar.guild_id):scalar for scalar in result.scalars()}
 
         async def send_due_message(guild_id : GuildId,scheduled_msg : tuple[Timestamp,ChannelId,str,tuple[MemberName,AvatarUrl]]):
             # Set up some variables to make the code easier to read
@@ -1641,15 +1727,23 @@ class Utility(commands.Cog):
                 pass
             pass
 
-        await asyncio.gather(*[
-            send_due_message(guild_id,scheduled_msg)
+        session : asql.AsyncSession = SESSION_FACTORY()
+        try:
+            # Get all SQL Database entries for scheduled messages
+            required_guilds = [str(guild_id) for guild_id in list(zip(*due_messages))[0]]
+            result : CursorResult = (await session.execute(sql.select(ScheduledMessages).where(ScheduledMessages.guild_id.in_(required_guilds))))
+            sql_msgs : dict[GuildId,ScheduledMessages] = {int(scalar.guild_id):scalar for scalar in result.scalars()}
 
-            for guild_id, scheduled_messages in due_messages
-            for scheduled_msg in scheduled_messages
-        ]) # Send all the due messages
+            await asyncio.gather(*[
+                send_due_message(guild_id,scheduled_msg)
 
-        await session.commit()
-        await session.close()
+                for guild_id, scheduled_messages in due_messages
+                for scheduled_msg in scheduled_messages
+            ]) # Send all the due messages
+
+            await session.commit()
+        finally:
+            await session.close()
         pass
     
     

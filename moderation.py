@@ -118,13 +118,14 @@ class ModConfig:
     @classmethod
     async def load(cls, guild_id : int):
         session : asql.AsyncSession = SESSION_FACTORY()
-        result : CursorResult = await session.execute(sql.select(Guild.automod_settings).where(Guild.id == str(guild_id)))
-        
-        modconfig : dict = result.scalar_one_or_none()
-        if modconfig is not None:   obj = cls(**modconfig)
-        else:                       obj = cls()
-
-        await session.close()
+        try:
+            result : CursorResult = await session.execute(sql.select(Guild.automod_settings).where(Guild.id == str(guild_id)))
+            
+            modconfig : dict = result.scalar_one_or_none()
+            if modconfig is not None:   obj = cls(**modconfig)
+            else:                       obj = cls()
+        finally:
+            await session.close()
 
         return obj
         pass
@@ -179,11 +180,15 @@ class GodRoleView(discord.ui.View):
             pass
         
         self.cog.GOD_ROLES[self.ctx.guild.id].add(str(role.id))
+
         session : asql.AsyncSession = SESSION_FACTORY()
-        result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(interaction.guild_id)))
-        sql_guild : Guild = result.scalar_one()
-        sql_guild.god_roles.append(str(role.id))
-        await session.commit(); await session.close()
+        try:
+            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(interaction.guild_id)))
+            sql_guild : Guild = result.scalar_one()
+            sql_guild.god_roles.append(str(role.id))
+            await session.commit()
+        finally:
+            await session.close()
 
         await self.update_embed()
         pass
@@ -205,10 +210,13 @@ class GodRoleView(discord.ui.View):
         
         self.cog.GOD_ROLES[self.ctx.guild.id].remove(str(role.id))
         session : asql.AsyncSession = SESSION_FACTORY()
-        result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(interaction.guild_id)))
-        sql_guild : Guild = result.scalar_one()
-        sql_guild.god_roles.remove(str(role.id))
-        await session.commit(); await session.close()
+        try:
+            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(interaction.guild_id)))
+            sql_guild : Guild = result.scalar_one()
+            sql_guild.god_roles.remove(str(role.id))
+            await session.commit()
+        finally:
+            await session.close()
 
         await self.update_embed()
         pass
@@ -294,14 +302,17 @@ class LoggingSettingsView(discord.ui.View):
         
         select.disabled = True
         session : asql.AsyncSession = SESSION_FACTORY()
-        result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(interaction.guild_id)))
-        sqlguild : Guild = result.scalar_one_or_none()
-        if sqlguild is None:
-            sqlguild = Guild(str(interaction.guild_id))
-            session.add(sqlguild)
-            pass
-        sqlguild.logging_settings = settings.to_value()
-        await session.commit(); await session.close()
+        try:
+            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(interaction.guild_id)))
+            sqlguild : Guild = result.scalar_one_or_none()
+            if sqlguild is None:
+                sqlguild = Guild(str(interaction.guild_id))
+                session.add(sqlguild)
+                pass
+            sqlguild.logging_settings = settings.to_value()
+            await session.commit()
+        finally:
+            await session.close()
 
         await self.update_message()
 
@@ -442,61 +453,70 @@ class Moderation(commands.Cog):
 
     @anarchy.after_invoke
     async def anarchy_sql_update(self,ctx : commands.Context):
-        sqlguild, session = await get_sql_guild(ctx.guild.id)
+        try:
+            sqlguild, session = await get_sql_guild(ctx.guild.id)
+            # Remove all outdated channels (channels that were deleted)
+            all_channel_ids : list[ChannelId] = [channel.id for channel in ctx.guild.text_channels]
 
-        # Remove all outdated channels (channels that were deleted)
-        all_channel_ids : list[ChannelId] = [channel.id for channel in ctx.guild.text_channels]
+            prev_anarchies = sqlguild.anarchies.copy()
+            sqlguild.anarchies.clear()
+            sqlguild.anarchies.extend(filter(lambda channel_str: int(channel_str) in all_channel_ids , prev_anarchies))
+            # Update the RAM dict with the anarchy channels
+            self.ANARCHIES.setdefault(ctx.guild.id,set())
+            self.ANARCHIES[ctx.guild.id].clear()
+            self.ANARCHIES[ctx.guild.id].update([int(channel_str) for channel_str in sqlguild.anarchies])
 
-        prev_anarchies = sqlguild.anarchies.copy()
-        sqlguild.anarchies.clear()
-        sqlguild.anarchies.extend(filter(lambda channel_str: int(channel_str) in all_channel_ids , prev_anarchies))
-        # Update the RAM dict with the anarchy channels
-        self.ANARCHIES.setdefault(ctx.guild.id,set())
-        self.ANARCHIES[ctx.guild.id].clear()
-        self.ANARCHIES[ctx.guild.id].update([int(channel_str) for channel_str in sqlguild.anarchies])
-
-        await session.commit(); await session.close() # Commit & Close
+            await session.commit()
+        finally:
+            await session.close() # Commit & Close
         pass
 
     @anarchy.command("enable",brief="Excludes this channel from the automod")
     async def set_anarchy(self, ctx : commands.Context):
-        sqlguild, session = await get_sql_guild(ctx.guild.id) # Get the SQL Reference to the guild
-        if not str(ctx.channel.id) in sqlguild.anarchies:
-            sqlguild.anarchies.append(str(ctx.channel.id)) # Add the channel to the anarchy channels
-            await ctx.send("Woo! Anarchy... I guess..." + (" You know, as a moderation bot this is a rather weird thing to say..." if random.randint(1,25) == 25 else ""),ephemeral=True)
-            pass
-        else:
-            await ctx.send("Hahaha! This is anarchy! I don't have to listen to you anymore! (Anarchy is already enabled)",ephemeral=True)
-            pass
-        
-        await session.commit(); await session.close()
+        try:
+            sqlguild, session = await get_sql_guild(ctx.guild.id) # Get the SQL Reference to the guild
+            if not str(ctx.channel.id) in sqlguild.anarchies:
+                sqlguild.anarchies.append(str(ctx.channel.id)) # Add the channel to the anarchy channels
+                await ctx.send("Woo! Anarchy... I guess..." + (" You know, as a moderation bot this is a rather weird thing to say..." if random.randint(1,25) == 25 else ""),ephemeral=True)
+                pass
+            else:
+                await ctx.send("Hahaha! This is anarchy! I don't have to listen to you anymore! (Anarchy is already enabled)",ephemeral=True)
+                pass
+            
+            await session.commit()
+        finally:
+            await session.close()
         pass
 
     @anarchy.command("disable",brief="(Re)includes this channel in the automod")
     async def rem_anarchy(self, ctx : commands.Context):
-        sqlguild, session = await get_sql_guild(ctx.guild.id) # Get SQL Reference to the guild
-        if str(ctx.channel.id) in sqlguild.anarchies:
-            sqlguild.anarchies.remove(str(ctx.channel.id))
-            await ctx.send("Alright, anarchy is disabled now. No, put that axe away; I said it is **disabled** now.",ephemeral=True)
-            pass
-        else:
-            await ctx.send("But... there isn't any anarchy here, what should I do now?",ephemeral=True)
-            pass
+        try:
+            sqlguild, session = await get_sql_guild(ctx.guild.id) # Get SQL Reference to the guild
+            if str(ctx.channel.id) in sqlguild.anarchies:
+                sqlguild.anarchies.remove(str(ctx.channel.id))
+                await ctx.send("Alright, anarchy is disabled now. No, put that axe away; I said it is **disabled** now.",ephemeral=True)
+                pass
+            else:
+                await ctx.send("But... there isn't any anarchy here, what should I do now?",ephemeral=True)
+                pass
 
-        await session.commit(); await session.close() # Commit & Close
+            await session.commit()
+        finally:
+            await session.close() # Commit & Close
         pass
 
     @anarchy.command("list",brief="List all anarchy channels on this server")
     async def list_anarchy(self, ctx : commands.Context):
-        sqlguild, session = await get_sql_guild(ctx.guild.id) # Get SQL Reference to the guild
-        
-        embed = discord.Embed(title="Anarchy channels",colour=discord.Colour.blue(),description="")
-        for channel_str in sqlguild.anarchies: # List every anarchy channel in the embed description
-            channel = ctx.guild.get_channel(int(channel_str))
-            embed.description = "".join((embed.description,channel.mention,"\n"))
-            pass
-
-        await session.close()
+        try:
+            sqlguild, session = await get_sql_guild(ctx.guild.id) # Get SQL Reference to the guild
+            
+            embed = discord.Embed(title="Anarchy channels",colour=discord.Colour.blue(),description="")
+            for channel_str in sqlguild.anarchies: # List every anarchy channel in the embed description
+                channel = ctx.guild.get_channel(int(channel_str))
+                embed.description = "".join((embed.description,channel.mention,"\n"))
+                pass
+        finally:
+            await session.close()
 
         await ctx.send(embed=embed,ephemeral=True)
         pass
@@ -600,49 +620,52 @@ class Moderation(commands.Cog):
 
 
         session : asql.AsyncSession = SESSION_FACTORY()
-        result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(ctx.guild.id)))
+        try:
+            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(ctx.guild.id)))
 
-        guild : Guild = result.scalar_one_or_none()
+            guild : Guild = result.scalar_one_or_none()
 
-        if guild is None or guild.mute_role_id in (None,""): # Create a `muted` role if it doesn't exist yet
-            role = await create_new_muted_role()
-            pass
-        else: # Get the muted role if it does exist
-            role_id = int(guild.mute_role_id)
-            role = ctx.guild.get_role(role_id)
-            if role is None: # Or create one if some moron deleted it
+            if guild is None or guild.mute_role_id in (None,""): # Create a `muted` role if it doesn't exist yet
                 role = await create_new_muted_role()
                 pass
-            pass
+            else: # Get the muted role if it does exist
+                role_id = int(guild.mute_role_id)
+                role = ctx.guild.get_role(role_id)
+                if role is None: # Or create one if some moron deleted it
+                    role = await create_new_muted_role()
+                    pass
+                pass
 
-        await member.add_roles(role,reason="Muted by a moderator")
-        
-        result = await session.execute(sql.select(GuildMutes).where(Guild.id == str(ctx.guild.id)))
+            await member.add_roles(role,reason="Muted by a moderator")
+            
+            result = await session.execute(sql.select(GuildMutes).where(Guild.id == str(ctx.guild.id)))
 
-        if seconds is not None:
-            muted_until = int(datetime.utcnow().timestamp() + seconds)
-            pass
-        else:
-            muted_until = None
-            pass
-        try:
-            mutes : GuildMutes = result.scalar_one()
-            pass
-        except NoResultFound:
-            await session.execute(sql.insert(GuildMutes).values(guild_id=str(ctx.guild.id),mutes={
-                str(member.id):[
+            if seconds is not None:
+                muted_until = int(datetime.utcnow().timestamp() + seconds)
+                pass
+            else:
+                muted_until = None
+                pass
+            try:
+                mutes : GuildMutes = result.scalar_one()
+                pass
+            except NoResultFound:
+                await session.execute(sql.insert(GuildMutes).values(guild_id=str(ctx.guild.id),mutes={
+                    str(member.id):[
+                        muted_until,
+                        reason
+                    ]
+                }))
+                pass
+            else:
+                mutes.mutes[str(member.id)] = [
                     muted_until,
                     reason
                 ]
-            }))
-            pass
-        else:
-            mutes.mutes[str(member.id)] = [
-                muted_until,
-                reason
-            ]
-            pass
-        await session.commit(); await session.close() # Commit & Close
+                pass
+            await session.commit()
+        finally:
+            await session.close() # Commit & Close
 
         mute_event_data : Event.Mute = {"manual":True,"member":member,"reason":reason,"until":muted_until,"actor":ctx.author}
         add_logging_event(Event(Event.MUTE_EVENT,ctx.guild,mute_event_data))
@@ -671,10 +694,13 @@ class Moderation(commands.Cog):
         self.GOD_ROLES[ctx.guild.id].add(str(role.id))
 
         session : asql.AsyncSession = SESSION_FACTORY()
-        result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id==str(ctx.guild.id)))
-        sql_guild : Guild = result.scalar_one()
-        sql_guild.god_roles.append(str(role.id))
-        await session.commit(); await session.close()
+        try:
+            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id==str(ctx.guild.id)))
+            sql_guild : Guild = result.scalar_one()
+            sql_guild.god_roles.append(str(role.id))
+            await session.commit()
+        finally:
+            await session.close()
 
         await ctx.send(f"All hail {role.mention} or something... Anyway, that role is now a god role!",ephemeral=True)
         pass
@@ -689,10 +715,13 @@ class Moderation(commands.Cog):
         self.GOD_ROLES[ctx.guild.id].remove(str(role.id))
 
         session : asql.AsyncSession = SESSION_FACTORY()
-        result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id==str(ctx.guild.id)))
-        sql_guild : Guild = result.scalar_one()
-        sql_guild.god_roles.remove(str(role.id))
-        await session.commit(); await session.close()
+        try:
+            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id==str(ctx.guild.id)))
+            sql_guild : Guild = result.scalar_one()
+            sql_guild.god_roles.remove(str(role.id))
+            await session.commit()
+        finally:
+            await session.close()
 
         await ctx.send("So what is this called? Let me just check... A, yes! Deicide, that's it!",ephemeral=True)
         pass
@@ -719,8 +748,11 @@ class Moderation(commands.Cog):
             pass
 
         session : asql.AsyncSession = SESSION_FACTORY()
-        await session.execute(sql.update(Guild).where(Guild.id==str(ctx.guild.id)).values(logging_channel=(str(channel.id) if channel is not None else None)))
-        await session.commit(); await session.close()
+        try:
+            await session.execute(sql.update(Guild).where(Guild.id==str(ctx.guild.id)).values(logging_channel=(str(channel.id) if channel is not None else None)))
+            await session.commit()
+        finally:
+            await session.close()
 
         self.LOGGING_CHANNEL[ctx.guild.id] = (channel.id if channel is not None else None)
 
@@ -759,11 +791,14 @@ class Moderation(commands.Cog):
         self.LOGGING_SETTINGS[ctx.guild.id].update(*args)
 
         session : asql.AsyncSession = SESSION_FACTORY()
-        result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(ctx.guild.id)))
-        sqlobj : Guild = result.scalar_one_or_none()
-        if sqlobj is not None: sqlobj.logging_settings = self.LOGGING_SETTINGS[ctx.guild.id].to_value()
+        try:
+            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(ctx.guild.id)))
+            sqlobj : Guild = result.scalar_one_or_none()
+            if sqlobj is not None: sqlobj.logging_settings = self.LOGGING_SETTINGS[ctx.guild.id].to_value()
 
-        await session.commit(); await session.close()
+            await session.commit()
+        finally:
+            await session.close()
 
         view = LoggingSettingsView(ctx,self,timeout=CONFIG.EDIT_TIMEOUT)
         message = await ctx.send("```\nFirst select whether you wish to enable or disable an event\nand then use the select menu to specify the event```",view=view,ephemeral=True)
@@ -808,26 +843,28 @@ class Moderation(commands.Cog):
     async def moderation_collector(self):
         """Loads SQL Table into RAM to improve performance"""
         session : asql.AsyncSession = SESSION_FACTORY()
-        result : CursorResult = await session.execute(sql.select(Guild))
-        sqlobjs : list[Guild] = result.scalars().all()
-        
-        for sqlguild in sqlobjs:
-            await self.moderation_inserter(sqlguild)
-            pass
-
-        await session.close()
+        try:
+            result : CursorResult = await session.execute(sql.select(Guild))
+            sqlobjs : list[Guild] = result.scalars().all()
+            
+            for sqlguild in sqlobjs:
+                await self.moderation_inserter(sqlguild)
+                pass
+        finally:
+            await session.close()
         pass
 
     @commands.Cog.listener("on_guild_join")
     async def moderation_inserter_event(self, guild : discord.Guild):
         session : asql.AsyncSession = SESSION_FACTORY()
-        result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(guild.id)))
+        try:
+            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(guild.id)))
 
-        sqlguild : Optional[Guild] = result.scalar_one_or_none()
+            sqlguild : Optional[Guild] = result.scalar_one_or_none()
 
-        await self.moderation_inserter(sqlguild,guild_id=guild.id)
-
-        await session.close()
+            await self.moderation_inserter(sqlguild,guild_id=guild.id)
+        finally:
+            await session.close()
         pass
 
     @commands.Cog.listener("on_ready")
