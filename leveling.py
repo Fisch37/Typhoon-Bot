@@ -242,7 +242,7 @@ class Leveling(commands.Cog):
         
         if guild is None or member.bot: return # We don't need any bot levelling, do we? # Nor do we need any commands to start this
 
-        level_settings = self.LEVEL_SETTINGS[guild.id] # This will throw KeyError sometimes, but I'll fix that later
+        level_settings = self.LEVEL_SETTINGS[guild.id] # This will throw KeyError sometimes, but I'll fix that later. It's later now
 
         if not level_settings.enabled: return # Should be obvious, I think
 
@@ -261,7 +261,7 @@ class Leveling(commands.Cog):
             pass
         pass
 
-    @tasks.loop(count=1)
+    @tasks.loop(count=1,loop=loop)
     async def leveling_collector(self):
         session : asql.AsyncSession = SESSION_FACTORY()
         try:
