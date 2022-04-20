@@ -183,6 +183,7 @@ class Leveling(commands.Cog):
     def __init__(self):
         super().__init__()
         self.sql_saver_task.start()
+        self.leveling_collector.start()
         pass
 
     def cog_unload(self):
@@ -231,6 +232,7 @@ class Leveling(commands.Cog):
             channel_id = self.LEVEL_SETTINGS[message.guild.id].channel_id
             lvlup_channel = message.guild.get_channel(channel_id) if channel_id is not None else message.channel
             await lvlup_channel.send("\n".join(lines))
+            pass
         pass
 
     @commands.Cog.listener("on_message")
@@ -259,8 +261,7 @@ class Leveling(commands.Cog):
             pass
         pass
 
-    @commands.Cog.listener("on_ready")
-    @utils.call_once_async
+    @tasks.loop(count=1)
     async def leveling_collector(self):
         session : asql.AsyncSession = SESSION_FACTORY()
         try:
