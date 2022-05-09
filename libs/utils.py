@@ -257,17 +257,25 @@ def generate_snowflake(*,__inc__ = [0]): # __inc__ is a list because that means 
     return snowflake
     pass
 
-class IntConverter(commands.Converter):
+class ValueErrorConverter(commands.Converter):
     async def convert(self, ctx: commands.Context, argument: str) -> int:
         try:
-            return int(argument)
+            return self._CONVERTER(argument)
         except ValueError:
             raise commands.BadArgument("argument is not a valid integer")
             pass
         pass
     pass
 
-async def wait_for_convert(bot : commands.Bot, ctx : commands.Context, converter : commands.Converter, error_prompt : str = "Passed argument could not be converted", check = lambda msg: True, timeout : float = None) -> Optional[Any]:
+class IntConverter(ValueErrorConverter):
+    _CONVERTER = int
+    pass
+
+class FloatConverter(ValueErrorConverter):
+    _CONVERTER = float
+    pass
+
+async def wait_for_convert(bot : commands.Bot, ctx : commands.Context, converter : commands.Converter, error_prompt : str = "Passed argument could not be converted", check = lambda val: True, timeout : float = None) -> Optional[Any]:
     while True:
         resp_msg : discord.Message = await bot.wait_for("message",check=lambda msg: msg.author == ctx.author and msg.channel == ctx.channel,timeout=timeout)
         try:

@@ -8,13 +8,15 @@ from libs.interpret_levelup import VAR_DESCR as LVL_UP_MSG_VAR_DESCR, raw_format
 from libs.converters.time import DurationConverter, OutOfOrderException
 from libs.logging_utils import LoggingSettings, translation_table as LOGGING_TRANSLATE
 import asyncio
-from typing import Callable, Literal, Optional
+from typing import Any, Literal
 
 import discord
 from discord.ext import commands
 from discord.ext.commands.converter import Option
+from discord import ButtonStyle
 
 import sqlalchemy as sql, sqlalchemy.ext.asyncio as asql
+from moderation import AutomodState, ModConfig
 from ormclasses import *
 # Declare constants
 CONFIG : config.Config = ...
@@ -26,6 +28,8 @@ ENGINE : asql.AsyncEngine = ...
 SESSION_FACTORY : orm.sessionmaker = ...
 
 #####################################################
+
+send_ephemeral = lambda interaction, content: send_ephemeral(interaction,content,ephemeral=True)
 
 async def EMPTY_UPDATE(self): ...
 
@@ -45,25 +49,25 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
     god_roles = BOT.DATA.GOD_ROLES[self.ctx.guild.id]
     if isinstance(element,discord.ui.Button):
         if element.label == "Add":
-            await interaction.followup.send("Please reply with a role you wish to add as a God Role",ephemeral=True)
+            await send_ephemeral(interaction,"Please reply with a role you wish to add as a God Role")
             role = await utils.wait_for_role(BOT,self.ctx,"The message you sent did not contain a role. Please try again.",timeout=CONFIG.EDIT_TIMEOUT)
 
             god_roles.add(str(role.id))
-            await interaction.followup.send(f"Added {role.mention} as a god role!",ephemeral=True)
+            await send_ephemeral(interaction,f"Added {role.mention} as a god role!")
             pass
         elif element.label == "Remove":
-            await interaction.followup.send("Please reply with a role you wish to remove as a God Role",ephemeral=True)
+            await send_ephemeral(interaction,"Please reply with a role you wish to remove as a God Role")
             while True:
                 role = await utils.wait_for_role(BOT,self.ctx,"The message you sent did not contain a role. Please try again.",timeout=CONFIG.EDIT_TIMEOUT)
                 if str(role.id) not in god_roles:
-                    await interaction.followup.send("This role is not a god role. Please supply a god role.",ephemeral=True)
+                    await send_ephemeral(interaction,"This role is not a god role. Please supply a god role.")
                     pass
                 else:
                     break
                 pass
 
             god_roles.remove(str(role.id))
-            await interaction.followup.send(f"Removed {role.mention} from the list of god roles!",ephemeral=True)
+            await send_ephemeral(interaction,f"Removed {role.mention} from the list of god roles!")
             pass
         if element.label in ("Add","Remove"):
             session : asql.AsyncSession = SESSION_FACTORY()
@@ -93,8 +97,8 @@ Mod_Gods = element_factory(
     view_interact_callback=on_interaction,
     colour=discord.Colour.yellow(),
     options = [
-        ConfigButton(discord.ButtonStyle.primary,"Add",row=0),
-        ConfigButton(discord.ButtonStyle.secondary,"Remove",row=0)
+        ConfigButton(ButtonStyle.primary,"Add",row=0),
+        ConfigButton(ButtonStyle.secondary,"Remove",row=0)
     ]
 )
 
@@ -133,11 +137,11 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             await session.close()
         pass
     elif element.label == "Set Channel":
-        await interaction.followup.send("Please reply with the text channel you want logging to happen in", ephemeral=True)
+        await send_ephemeral(interaction,"Please reply with the text channel you want logging to happen in")
         while True:
             channel : discord.TextChannel = await utils.wait_for_text_channel(BOT,self.ctx,"The message you sent could not be interpreted as a text channel. Please try again")
             if channel.guild == self.ctx.guild: break
-            else: await interaction.followup.send("The channel you passed doesn't exist on this server. Please pass a channel on this server",ephemeral=True)
+            else: await send_ephemeral(interaction,"The channel you passed doesn't exist on this server. Please pass a channel on this server")
             pass
         
         BOT.DATA.LOGGING_CHANNEL[self.ctx.guild.id] = channel.id
@@ -149,7 +153,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
         finally:
             await session.close()
 
-        await interaction.followup.send(f"The Logging Channel has been changed to {channel.mention}!",ephemeral=True)
+        await send_ephemeral(interaction,f"The Logging Channel has been changed to {channel.mention}!")
         pass
     elif element.label == "Disable":
         session : asql.AsyncSession = SESSION_FACTORY()
@@ -186,31 +190,354 @@ Mod_Logging = element_factory(
             # discord.SelectOption(label="Threads",value="threads",description="Log member interactions with threads"),
             discord.SelectOption(label="Thread Moderation",value="threads_mod",description="Log changes to threads")
         )),
-        ConfigButton(discord.ButtonStyle.primary,"Set Channel",row=1),
-        ConfigButton(discord.ButtonStyle.secondary,"Disable",row=1)
+        ConfigButton(ButtonStyle.primary,"Set Channel",row=1),
+        ConfigButton(ButtonStyle.secondary,"Disable",row=1)
+    ]
+)
+
+# ---
+def assure_mod_config(guild_id : int) -> ModConfig:
+    BOT.DATA.AUTOMOD_SETTINGS.setdefault(guild_id, ModConfig())
+    return BOT.DATA.AUTOMOD_SETTINGS[guild_id]
+    pass
+
+def assure_automod_state(guild_id : int) -> AutomodState:
+    BOT.DATA.AUTOMODS.setdefault(guild_id, AutomodState())
+    return BOT.DATA.AUTOMODS[guild_id]
+    pass
+
+def update_automod_config_page(self : ConfigElement, values : tuple[tuple[str,Any],...]):
+    apply_specials = lambda state: (":white_check_mark:" if state else ":x:") if isinstance(state,bool) else f"`{state}`"
+    value_str = "\n".join([f"{value}: {apply_specials(state)}" for value, state in values])
+    self.embed.clear_fields()
+    self.embed.add_field(name="Config Values",value=value_str,inline=False)
+    pass
+
+async def update_sql_mod_config(guild_id : int, mod_config : ModConfig):
+    session = SESSION_FACTORY()
+    try:
+        sql_guild = await utils.get_guild(session,guild_id)
+        sql_guild.automod_settings = mod_config.to_dict()
+        await session.commit()
+        pass
+    finally:
+        await session.close()
+        pass
+    pass
+
+async def change_automod_setting_state(guild_id : int, automod : str, state : bool):
+    states = assure_automod_state(guild_id)
+    setattr(states,automod,state)
+    await states.save(guild_id)
+    pass
+
+async def change_mod_config_value(guild_id : int, setting : str, value : Any):
+    mod_config = assure_mod_config(guild_id)
+    setattr(mod_config,setting,value)
+    
+    await update_sql_mod_config(guild_id,mod_config)
+    pass
+
+async def specified_convert(ctx : commands.Context, converter, error_msg : str, check = lambda obj: True) -> Any:
+    return await utils.wait_for_convert(bot=BOT, ctx=ctx, converter=converter, error_prompt=error_msg, check=check, timeout=CONFIG.EDIT_TIMEOUT)
+    pass
+
+async def update_consequences(guild_id : int, target : str, selected_consequences : list[str]):
+    mod_config = assure_mod_config(guild_id)
+    # Doing these seperately so as to not create a new list object preserving potential weirdness in other code segments
+    getattr(mod_config,target)[0] = "delete" in selected_consequences
+    getattr(mod_config,target)[1] = "warn" in selected_consequences
+
+    await update_sql_mod_config(guild_id, mod_config)
+    pass
+
+def update_select_menu(self : ConfigElement, consequences : list[bool,bool]):
+    select_menu : discord.ui.Select = next(filter(lambda item: isinstance(item,discord.ui.Select),self.view.children))
+    for option in select_menu.options:
+        if option.value == "delete":
+            option.default = consequences[0]
+            pass
+        elif option.value == "warn":
+            option.default = consequences[1]
+            pass
+        pass
+    pass
+
+
+async def update(self : ConfigElement):
+    mod_config = assure_mod_config(self.ctx.guild.id)
+
+    update_select_menu(self,mod_config.spam_consequence)
+
+    update_automod_config_page(self,(
+        ("Delete Message", mod_config.spam_consequence[0]),
+        ("Warn Member", mod_config.spam_consequence[1]),
+        ("Maximum Repetition", mod_config.spam_max_message_repetition),
+        ("Maximum Similarity",f"{round(mod_config.spam_max_message_similarity*100,1)}%")
+    ))
+    pass
+
+async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
+    if isinstance(element, discord.ui.Button):
+        if element.label == "Enable":
+            await change_automod_setting_state(self.ctx.guild.id,"spamspam",True)
+            await send_ephemeral(interaction,"Spam Automod is now enabled!")
+            pass
+        
+        elif element.label == "Disable":
+            await change_automod_setting_state(self.ctx.guild.id,"spamspam",False)
+            await send_ephemeral(interaction,"Spam Automod is now disabled!")
+            pass
+        
+        elif element.label == "Change Maximum Repetition":
+            await send_ephemeral(interaction,"Please send an integer specifying the maximum amount a message may be repeated before the next similar message qualifies as spam.")
+            repetition = await specified_convert(
+                self.ctx,utils.IntConverter(),
+                "The message you sent could not be interpreted as a positive integer. Check that you did not send redundant spaces or other characters.",
+                check=lambda repetition: repetition > 0
+            )
+            await change_mod_config_value(self.ctx.guild.id,"spam_max_message_repetition",repetition)
+            pass
+        elif element.label == "Reset Maximum Repetition":
+            val = "spam_max_message_repetition"
+            await change_mod_config_value(self.ctx.guild.id,val,ModConfig.DEFAULTS[val])
+            pass
+
+        elif element.label == "Change Maximum Similarity":
+            await send_ephemeral(interaction,)
+            
+            similarity_percent = specified_convert(
+                self.ctx, utils.FloatConverter(),
+                "The message you sent could not be interpreted as a similarity value. Make there is no % sign in your message. Also make sure your number is not less or equal to zero and not higher than 100.",
+                check=lambda similarity: similarity < 100 and similarity > 0
+            )
+            similarity = similarity_percent/100 # Entered number is percentage, therefore converting to ratio
+            await change_mod_config_value(self.ctx.guild.id,"spam_max_message_similarity",similarity)
+
+            await send_ephemeral(interaction,)
+            pass
+        elif element.label == "Reset Maximum Similarity":
+            val = "spam_max_message_similarity"
+            await change_mod_config_value(self.ctx.guild.id,val,ModConfig.DEFAULTS[val])
+            pass
+        pass
+
+    else:
+        await update_consequences(self.ctx.guild.id,"spam_consequence",element.values)
+        pass
+    pass
+
+Automod_Spam = element_factory(
+    "Message Spam",
+    short_description="Prevent people sending similar messages quickly in series",
+    long_description="""Message Spam prevention is a part of automod catching spammers by comparing the similarity of their last messages.
+    This is moderated by two values:
+    The first one is the maximum amount of similar messages until the next one is classified as spam.
+    The second one is the similarity required for two messages to be tagged as similar.
+    
+    You can also configure the consequences for spamming with the select menu below the config buttons.""",
+    colour=discord.Colour.yellow(),
+    update_callback=update,
+    view_interact_callback=on_interaction,
+    options=[
+        ConfigButton(ButtonStyle.green,"Enable",row=0), ConfigButton(ButtonStyle.red,"Disable",row=0),
+        ConfigButton(ButtonStyle.primary,"Change Maximum Repetition",row=1), ConfigButton(ButtonStyle.secondary,"Reset Maximum Repetition",row=1),
+        ConfigButton(ButtonStyle.primary,"Change Maximum Similarity",row=2), ConfigButton(ButtonStyle.secondary,"Reset Maximum Similarity",row=2),
+        ConfigSelect(range(2+1),[
+            discord.SelectOption(label="Delete Message",value="delete",description="Enable this to delete messages detected as spam"),
+            discord.SelectOption(label="Warn Member",value="warn",description="Enable this to automatically warn members sending spam")
+        ],row=3)
     ]
 )
 
 #
 
-async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
+async def update(self : ConfigElement):
+    mod_config = assure_mod_config(self.ctx.guild.id)
+
+    update_select_menu(self,mod_config.caps_consequence)
+
+    update_automod_config_page(self,(
+        ("Delete Message", mod_config.caps_consequence[0]),
+        ("Warn Member", mod_config.caps_consequence[1]),
+        ("Minimum Message Length", mod_config.caps_min_length),
+        ("Maximum Caps Percentage",f"{round(mod_config.caps_max_ratio*100,1)}%")
+    ))
     pass
 
-Mod_Automod = element_factory(
-    "Automod",
-    short_description="Configure settings for automatic moderation",
-    long_description="Automod allows you to automatically moderate users on this server. This includes message spam, capslock spam, and emoji spam. Here, you can modify certain variables regarding these types.",
-    update_callback=EMPTY_UPDATE,
-    view_interact_callback=on_interaction,
+async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
+    if isinstance(element, discord.ui.Button):
+        if element.label == "Enable":
+            await change_automod_setting_state(self.ctx.guild.id,"capsspam",True)
+            pass
+        elif element.label == "Disable":
+            await change_automod_setting_state(self.ctx.guild.id,"capsspam",False)
+            pass
+
+        elif element.label == "Change Minimum Length":
+            await send_ephemeral(interaction,"")
+
+            min_length = await specified_convert(
+                self.ctx,utils.IntConverter(),
+                "",
+                check = lambda length: length > 0
+            )
+            await change_mod_config_value(self.ctx.guild.id,"caps_min_length",min_length)
+
+            await send_ephemeral(interaction,"")
+            pass
+        elif element.label == "Reset Minimum Length":
+            val = "caps_min_length"
+            await change_mod_config_value(self.ctx.guild.id,val,ModConfig.DEFAULTS[val])
+            pass
+
+        elif element.label == "Change Maximum Ratio":
+            await send_ephemeral(interaction,"")
+
+            percentage = await specified_convert(
+                self.ctx, utils.FloatConverter(),
+                "",
+                check = lambda percentage: percentage > 0 and percentage < 100
+            )
+            ratio = percentage/100 # Getting percentage for ease of use, but needs ratio internally
+            await change_mod_config_value(self.ctx.guild.id,"caps_max_ratio",ratio)
+            pass
+        elif element.label == "Reset Maximum Ratio":
+            val = "caps_max_ratio"
+            await change_mod_config_value(self.ctx.guild.id,val,ModConfig.DEFAULTS[val])
+            pass
+        pass
+    else:
+        await update_consequences(self.ctx.guild.id,"caps_consequence",element.values)
+        pass
+    pass
+
+Automod_Caps = element_factory(
+    "Caps Spam",
+    short_description="Prevent people from SHOUTING IN YOUR CHANNELS",
+    long_description="""Capslock Spamming is the act of using capslock in your messages (i.e. writing in all capital letters).
+    Moderation for Capslock usage includes two values:
+    The first one is the minimum length required until the bot checks for caps spam. This is necessary so that short messages won't be tagged accidentally (e.g. accidentally typing HI instead of Hi)
+    The second one is the percentage of characters in upper case. This does not include special characters.
+    If the message is above the specified length and more than the set percentage of the message is upper case, it will qualify as Caps Spam.
+    
+    Besides these values you can also configure the consequences for Caps Spam using the select menu below.""",
     colour=discord.Colour.yellow(),
+    update_callback=update,
+    view_interact_callback=on_interaction,
     options=[
-        ConfigButton(discord.ButtonStyle.primary,"Spam Message Repetition",row=0), ConfigButton(discord.ButtonStyle.secondary,"Spam Message Similarity",row=0), ConfigButton(discord.ButtonStyle.success,"Message Spam Consequences",row=0),
-        ConfigButton(discord.ButtonStyle.primary,"Caps Max Percentage",row=1), ConfigButton(discord.ButtonStyle.secondary,"Caps Min Length",row=1), ConfigButton(discord.ButtonStyle.success,"Caps Spam Consequences",row=1),
-        ConfigButton(discord.ButtonStyle.primary,"Emoji Max Percentage",row=2), ConfigButton(discord.ButtonStyle.secondary,"Emoji Min Length",row=2), ConfigButton(discord.ButtonStyle.success,"Emoji Spam Consequences",row=2),
+        ConfigButton(ButtonStyle.green,"Enable",row=0), ConfigButton(ButtonStyle.red,"Disable",row=0),
+        ConfigButton(ButtonStyle.primary,"Change Minimum Length",row=1), ConfigButton(ButtonStyle.secondary,"Reset Minimum Length",row=1),
+        ConfigButton(ButtonStyle.primary,"Change Maximum Ratio",row=2), ConfigButton(ButtonStyle.secondary,"Reset Maximum Ratio",row=2),
+        ConfigSelect(range(2+1),[
+            discord.SelectOption(label="Delete Message",value="delete",description="Enable this to delete messages detected as spam"),
+            discord.SelectOption(label="Warn Member",value="warn",description="Enable this to automatically warn members sending spam")
+        ],row=3)
     ]
 )
 
-# 
+#
+
+async def update(self : ConfigElement):
+    mod_config = assure_mod_config(self.ctx.guild.id)
+
+    update_select_menu(self,mod_config.emoji_consequence)
+
+    update_automod_config_page(self,(
+        ("Delete Message", mod_config.emoji_consequence[0]),
+        ("Warn Member", mod_config.emoji_consequence[1]),
+        ("Minimum Message Length", mod_config.emoji_min_length),
+        ("Maximum Emoji Percentage",f"{round(mod_config.emoji_max_ratio*100,1)}%")
+    ))
+    pass
+
+async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
+    if isinstance(element, discord.ui.Button):
+        if element.label == "Enable":
+            await change_automod_setting_state(self.ctx.guild.id,"emotespam",True)
+            pass
+        elif element.label == "Disable":
+            await change_automod_setting_state(self.ctx.guild.id,"emotespam",False)
+            pass
+
+        elif element.label == "Change Minimum Length":
+            await send_ephemeral(interaction,"")
+
+            min_length = await specified_convert(
+                self.ctx,utils.IntConverter(),
+                "",
+                check = lambda length: length > 0
+            )
+            await change_mod_config_value(self.ctx.guild.id,"caps_min_length",min_length)
+
+            await send_ephemeral(interaction,"")
+            pass
+        elif element.label == "Reset Minimum Length":
+            val = "emoji_min_length"
+            await change_mod_config_value(self.ctx.guild.id,val,ModConfig.DEFAULTS[val])
+            pass
+
+        elif element.label == "Change Maximum Ratio":
+            await send_ephemeral(interaction,"")
+
+            percentage = await specified_convert(
+                self.ctx, utils.FloatConverter(),
+                "",
+                check = lambda percentage: percentage > 0 and percentage < 100
+            )
+            ratio = percentage/100 # Getting percentage for ease of use, but needs ratio internally
+            await change_mod_config_value(self.ctx.guild.id,"caps_max_ratio",ratio)
+            pass
+        elif element.label == "Reset Maximum Ratio":
+            val = "emoji_max_ratio"
+            await change_mod_config_value(self.ctx.guild.id,val,ModConfig.DEFAULTS[val])
+            pass
+        pass
+    else:
+        await update_consequences(self.ctx.guild.id,"emoji_consequence",element.values)
+        pass
+    pass
+
+Automod_Emote = element_factory(
+    "Emoji Spam",
+    short_description="Prevent people from getting overly excited using emojis",
+    long_description="""Emoji Spam is quite similar to Caps Spam. The only difference is that Emoji Spam checks for emojis instead of capital letters.
+    The same as Caps Spam it has two governing values:
+    Firstly, the minimum length required for the bot to check the message. (Required so that :thumbsup: doesn't become spam)
+    Secondly, the maximum percentage of a message being emotes before it qualifies as spam.
+    
+    You can also configure the consequences for sending Emoji Spam using the select menu.""",
+    colour=discord.Colour.yellow(),
+    update_callback=update,
+    view_interact_callback=on_interaction,
+    options=[
+        ConfigButton(ButtonStyle.green,"Enable",row=0), ConfigButton(ButtonStyle.red,"Disable",row=0),
+        ConfigButton(ButtonStyle.primary,"Change Minimum Length",row=1), ConfigButton(ButtonStyle.secondary,"Reset Minimum Length",row=1),
+        ConfigButton(ButtonStyle.primary,"Change Maximum Ratio",row=2), ConfigButton(ButtonStyle.secondary,"Reset Maximum Ratio",row=2),
+        ConfigSelect(range(2+1),[
+            discord.SelectOption(label="Delete Message",value="delete",description="Enable this to delete messages detected as spam"),
+            discord.SelectOption(label="Warn Member",value="warn",description="Enable this to automatically warn members sending spam")
+        ],row=3)
+    ]
+)
+
+#
+
+Mod_Automod = branch_factory(
+    "Automod",
+    short_description="Automatically moderate the messages on your server",
+    long_description="Automod allows you to hand off some of the dirty work of moderating to this bot. It currently implements three types of automod seen below.",
+    colour=discord.Colour.yellow(),
+    children=[
+        Automod_Spam,
+        Automod_Caps,
+        Automod_Emote
+    ]
+)
+
+Automod_Spam.PARENT = Automod_Caps.PARENT = Automod_Emote.PARENT = Mod_Automod
+
+# ---
 
 Moderation = branch_factory(
     "Moderation",
@@ -257,7 +584,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             finally:
                 await session.close()
 
-            await interaction.followup.send("Leveling is now enabled!",ephemeral=True)
+            await send_ephemeral(interaction,"Leveling is now enabled!")
             pass
         elif element.label == "Disable":
             lvl_settings.enabled = False
@@ -270,7 +597,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             finally:
                 await session.close()
 
-            await interaction.followup.send("Leveling is now disabled!",ephemeral=True)
+            await send_ephemeral(interaction,"Leveling is now disabled!")
             pass
         pass
     pass
@@ -283,8 +610,8 @@ Lvl_state = element_factory(
     update_callback=update,
     view_interact_callback=on_interaction,
     options=[
-        ConfigButton(discord.ButtonStyle.green,"Enable"),
-        ConfigButton(discord.ButtonStyle.red,"Disable")
+        ConfigButton(ButtonStyle.green,"Enable"),
+        ConfigButton(ButtonStyle.red,"Disable")
     ]
 )
 
@@ -318,32 +645,32 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
     if isinstance(element, discord.ui.Button):
         # Sets
         if element.label == "Set Lower Gain":
-            await interaction.followup.send("Please send a message with the Upper Gain you want to set",ephemeral=True)
+            await send_ephemeral(interaction,"Please send a message with the Upper Gain you want to set")
 
             lvl_settings = assure_level_settings(self.ctx.guild.id)
-            gain = await utils.wait_for_convert(
-                BOT,self.ctx,utils.IntConverter(),
+            gain = await specified_convert(
+                self.ctx,utils.IntConverter(),
                 "Your message could not be interpreted as a positive integer (i.e. whole number >0). Also check that the value is not larger than the current Upper Gain.",
                 lambda new_lower_gain: new_lower_gain <= lvl_settings.upper_gain
             )
 
             await update_gain("lower_gain","lower_xp_gain",gain)
 
-            await interaction.followup.send(f"Updated lower gain to {lvl_settings.lower_gain}!",ephemeral=True)
+            await send_ephemeral(interaction,f"Updated lower gain to {lvl_settings.lower_gain}!")
             pass
         elif element.label == "Set Upper Gain":
-            await interaction.followup.send("Please send a message with the Upper Gain you want to set",ephemeral=True)
+            await send_ephemeral(interaction,"Please send a message with the Upper Gain you want to set")
 
             lvl_settings = assure_level_settings(self.ctx.guild.id)
-            gain = await utils.wait_for_convert(
-                BOT,self.ctx,utils.IntConverter(),
+            gain = await specified_convert(
+                self.ctx,utils.IntConverter(),
                 "Your message could not be interpreted as a positive integer (i.e. whole number >0). Also check that the value is not larger than the current Upper Gain.",
                 lambda new_upper_gain: new_upper_gain >= lvl_settings.lower_gain
             )
             
             await update_gain("upper_gain","upper_xp_gain",gain)
 
-            await interaction.followup.send(f"Updated upper gain to {lvl_settings.upper_gain}!",ephemeral=True)
+            await send_ephemeral(interaction,f"Updated upper gain to {lvl_settings.upper_gain}!")
             pass
 
         # Resets
@@ -351,7 +678,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             default_gain = Guild.lower_xp_gain.default.arg
             lvl_settings = assure_level_settings(self.ctx.guild.id)
             if lvl_settings.upper_gain < default_gain:
-                await interaction.followup.send(f"This action would cause the Lower Gain to be lower than the Upper Gain.\nPlease set the Upper Gain to a value smaller than {default_gain} and try again.",ephemeral=True)
+                await send_ephemeral(interaction,f"This action would cause the Lower Gain to be lower than the Upper Gain.\nPlease set the Upper Gain to a value smaller than {default_gain} and try again.")
             else:
                 await update_gain("lower_gain","lower_xp_gain",default_gain)
             pass
@@ -359,7 +686,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             default_gain = Guild.upper_xp_gain.default.arg
             lvl_settings = assure_level_settings(self.ctx.guild.id)
             if lvl_settings.lower_gain > default_gain:
-                await interaction.followup.send(f"This action would cause the Upper Gain to be lower than the Lower Gain.\nPlease set the Lower Gain to a value smaller than {default_gain} and try again.",ephemeral=True)
+                await send_ephemeral(interaction,f"This action would cause the Upper Gain to be lower than the Lower Gain.\nPlease set the Lower Gain to a value smaller than {default_gain} and try again.")
             else:
                 await update_gain("upper_gain","upper_xp_gain",default_gain)
             pass
@@ -374,8 +701,8 @@ Lvl_xp = element_factory(
     update_callback=update,
     view_interact_callback=on_interaction,
     options=[
-        ConfigButton(discord.ButtonStyle.primary,"Set Lower Gain",row=0), ConfigButton(discord.ButtonStyle.secondary,"Reset Lower Gain",row=0), 
-        ConfigButton(discord.ButtonStyle.primary,"Set Upper Gain",row=1), ConfigButton(discord.ButtonStyle.secondary,"Reset Upper Gain",row=1)
+        ConfigButton(ButtonStyle.primary,"Set Lower Gain",row=0), ConfigButton(ButtonStyle.secondary,"Reset Lower Gain",row=0), 
+        ConfigButton(ButtonStyle.primary,"Set Upper Gain",row=1), ConfigButton(ButtonStyle.secondary,"Reset Upper Gain",row=1)
     ]
 )
 
@@ -392,17 +719,17 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
         lvl_settings = assure_level_settings(self.ctx.guild.id)
         
         if element.label == "Set Timeout":
-            await interaction.followup.send("Please send a time formatted like `<hours>H<minutes>M<seconds>S` to change the cooldown for xp gain",ephemeral=True)
+            await send_ephemeral(interaction,"Please send a time formatted like `<hours>H<minutes>M<seconds>S` to change the cooldown for xp gain")
             converter = DurationConverter()
             while True:
                 msg : discord.Message = await BOT.wait_for("message",check=lambda msg: msg.channel == self.ctx.channel and msg.author == self.ctx.author,timeout=CONFIG.EDIT_TIMEOUT)
                 try:
                     timeout = await converter.convert(self.ctx,msg.content)
                 except OutOfOrderException:
-                    await interaction.followup.send("Your message breaks the format specified previously. It seems you messed up the order of some values. Please check that you are following this format.",ephemeral=True)
+                    await send_ephemeral(interaction,"Your message breaks the format specified previously. It seems you messed up the order of some values. Please check that you are following this format.")
                     pass
                 except commands.BadArgument:
-                    await interaction.followup.send("The values specified with the format cannot be interpreted. Please check all values are integers and no text other than that specified with the format exists.",ephemeral=True)
+                    await send_ephemeral(interaction,"The values specified with the format cannot be interpreted. Please check all values are integers and no text other than that specified with the format exists.")
                     pass
                 else:
                     break
@@ -419,7 +746,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             finally:
                 await session.close()
 
-            await interaction.followup.send(f"Set XP Gain Timeout to {utils.stringFromDuration(timeout)}",ephemeral=True)
+            await send_ephemeral(interaction,f"Set XP Gain Timeout to {utils.stringFromDuration(timeout)}")
             pass
         elif element.label == "Reset Timeout":
             session : asql.AsyncSession = SESSION_FACTORY()
@@ -430,7 +757,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             finally:
                 await session.close()
 
-            await interaction.followup.send(f"Reset XP Gain Timeout to {utils.stringFromDuration(lvl_settings.timeout)}!",ephemeral=True)
+            await send_ephemeral(interaction,f"Reset XP Gain Timeout to {utils.stringFromDuration(lvl_settings.timeout)}!")
             pass
         pass
     pass
@@ -443,8 +770,8 @@ Lvl_timeout = element_factory(
     update_callback=update,
     view_interact_callback=on_interaction,
     options=[
-        ConfigButton(discord.ButtonStyle.primary,"Set Timeout"),
-        ConfigButton(discord.ButtonStyle.secondary,"Reset Timeout")
+        ConfigButton(ButtonStyle.primary,"Set Timeout"),
+        ConfigButton(ButtonStyle.secondary,"Reset Timeout")
     ]
 )
 
@@ -475,14 +802,14 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
                 pass
             markdown = "```css\n{}```".format('\n'.join(list_assembles))
             
-            await interaction.followup.send("Please send the message template you want to apply. Below is a list of variables that will be applied. A variable must always be surrounded by {}" + markdown,ephemeral=True)
+            await send_ephemeral(interaction,"Please send the message template you want to apply. Below is a list of variables that will be applied. A variable must always be surrounded by {}" + markdown)
 
             while True:
                 msg : discord.Message = await BOT.wait_for("message",check=lambda msg: msg.channel == self.ctx.channel and msg.author == self.ctx.author)
                 new_template = msg.content
                 await msg.delete()
                 if len(new_template) > 200:
-                    await interaction.followup.send("The template cannot be larger than 200 characters. Please shorten your template.",ephemeral=True)
+                    await send_ephemeral(interaction,"The template cannot be larger than 200 characters. Please shorten your template.")
                     pass
                 else: break
                 pass
@@ -511,10 +838,10 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             finally:
                 await session.close()
 
-            await interaction.followup.send(f"The template has been set. Following is an example message:\n\n{example_message}",ephemeral=True)
+            await send_ephemeral(interaction,f"The template has been set. Following is an example message:\n\n{example_message}")
             pass
         elif element.label == "Set Channel":
-            await interaction.followup.send("Please send a channel you wish to have your level-ups appear in.",ephemeral=True)
+            await send_ephemeral(interaction,"Please send a channel you wish to have your level-ups appear in.")
             while True:
                 """FIX: TypeError: 'NoneType' object is not callable"""
                 channel = await utils.wait_for_text_channel(
@@ -523,7 +850,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
                     CONFIG.EDIT_TIMEOUT
                 )
                 if channel.guild != self.ctx.guild:
-                    await interaction.followup.send("The channel you specified doesn't exist on this server. Please supply a channel on this server.",ephemeral=True)
+                    await send_ephemeral(interaction,"The channel you specified doesn't exist on this server. Please supply a channel on this server.")
                     pass
                 else:
                     break
@@ -555,7 +882,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             finally:
                 await session.close()
 
-            await interaction.followup.send("Reset message template!", ephemeral=True)
+            await send_ephemeral(interaction,"Reset message template!")
             pass
         elif element.label == "Reset message location":
             # Update setting in RAM
@@ -581,8 +908,8 @@ Lvl_msgs = element_factory(
     update_callback=update,
     view_interact_callback=on_interaction,
     options=[
-        ConfigButton(discord.ButtonStyle.primary,"Set Message",row=0), ConfigButton(discord.ButtonStyle.secondary,"Reset Message",row=0),
-        ConfigButton(discord.ButtonStyle.primary,"Set Channel",row=1), ConfigButton(discord.ButtonStyle.secondary,"Reset message location",row=1)
+        ConfigButton(ButtonStyle.primary,"Set Message",row=0), ConfigButton(ButtonStyle.secondary,"Reset Message",row=0),
+        ConfigButton(ButtonStyle.primary,"Set Channel",row=1), ConfigButton(ButtonStyle.secondary,"Reset message location",row=1)
     ]
 )
 
@@ -615,27 +942,30 @@ async def update(self : ConfigElement):
 async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
     if isinstance(element,discord.ui.Button):
         if element.label == "Add Reward Role":
-            await interaction.followup.send("Please send a message mentioning the role you want to add as a reward role",ephemeral=True)
+            await send_ephemeral(interaction,"Please send a message mentioning the role you want to add as a reward role")
             role = await utils.wait_for_role(BOT,self.ctx,"The message you sent could not be interpreted as a role. Make sure your message actually mentions the role.",timeout=CONFIG.EDIT_TIMEOUT)
             
-            await interaction.followup.send("Now send a message containing the level you wish to reward the role at.",ephemeral=True)
-            level : int = await utils.wait_for_convert(BOT,self.ctx,utils.IntConverter(),"The message you sent is not interpretable as an integer. Please make sure your message only contains a number.",timeout=CONFIG.EDIT_TIMEOUT)
+            await send_ephemeral(interaction,"Now send a message containing the level you wish to reward the role at.")
+            level : int = await specified_convert(
+                self.ctx, utils.IntConverter(),
+                "The message you sent is not interpretable as an integer. Please make sure your message only contains a number."
+            )
 
             reward_roles = assure_reward_roles(self.ctx.guild.id)
             reward_roles.add_reward_role(role.id,level)
             await reward_roles.save(self.ctx.guild.id)
 
-            await interaction.followup.send(f"The role {role.mention} is now set to be granted once a user achieves level {level}",ephemeral=True)
+            await send_ephemeral(interaction,f"The role {role.mention} is now set to be granted once a user achieves level {level}")
             pass
         elif element.label == "Remove Reward Role":
-            await interaction.followup.send("Please send the message containing the role you want to remove as a reward role",ephemeral=True)
+            await send_ephemeral(interaction,"Please send the message containing the role you want to remove as a reward role")
             role = await utils.wait_for_role(BOT,self.ctx,"The message you sent could not be interpreted as a role. Check that you are actually mentioning the role.",timeout=CONFIG.EDIT_TIMEOUT)
             
             reward_roles = assure_reward_roles(self.ctx.guild.id)
             reward_roles.remove_reward_role(role.id)
             await reward_roles.save(self.ctx.guild.id)
 
-            await interaction.followup.send(f"Removed the reward role for {role.mention}!",ephemeral=True)
+            await send_ephemeral(interaction,f"Removed the reward role for {role.mention}!")
             pass
         pass
     pass
@@ -648,8 +978,8 @@ Lvl_rewards = element_factory(
     update_callback=update,
     view_interact_callback=on_interaction,
     options=[
-        ConfigButton(discord.ButtonStyle.green,"Add Reward Role"),
-        ConfigButton(discord.ButtonStyle.red,"Remove Reward Role")
+        ConfigButton(ButtonStyle.green,"Add Reward Role"),
+        ConfigButton(ButtonStyle.red,"Remove Reward Role")
     ]
 )
 
@@ -714,7 +1044,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
         finally:
             await session.close()
 
-        await interaction.followup.send(f"Cloning is now {'enabled' if state else 'disabled'}!", ephemeral=True)
+        await send_ephemeral(interaction,f"Cloning is now {'enabled' if state else 'disabled'}!")
         pass
     if isinstance(element,discord.ui.Button):
         if element.label == "Enable":
@@ -734,8 +1064,8 @@ Clone_State = element_factory(
     update_callback=update,
     view_interact_callback=on_interaction,
     options=[
-        ConfigButton(discord.ButtonStyle.success,"Enable",None),
-        ConfigButton(discord.ButtonStyle.danger,"Disable",None)
+        ConfigButton(ButtonStyle.success,"Enable",None),
+        ConfigButton(ButtonStyle.danger,"Disable",None)
     ]
 )
 
@@ -754,7 +1084,7 @@ async def update(self : ConfigElement):
 
 async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
     async def get_filter_channel(start_message : str, error_msg : str = None, extra_check = lambda channel: True):
-        await interaction.followup.send(start_message,ephemeral=True)
+        await send_ephemeral(interaction,start_message)
         while True:
             channel = await utils.wait_for_text_channel(
                 BOT,self.ctx,
@@ -762,7 +1092,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
                 CONFIG.EDIT_TIMEOUT
             )
             if not extra_check(channel):
-                await interaction.followup.send(error_msg,ephemeral=True)
+                await send_ephemeral(interaction,error_msg)
             else: break
             pass
 
@@ -777,7 +1107,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             overrides[channel.id] = False
             await store_clone_overrides(self.ctx.guild.id,overrides)
 
-            await interaction.followup.send(f"Cloning is now disabled in {channel.mention}!",ephemeral=True)
+            await send_ephemeral(interaction,f"Cloning is now disabled in {channel.mention}!")
             pass
         elif element.label == "Add allow filter":
             channel = await get_filter_channel(
@@ -789,7 +1119,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             overrides[channel.id] = True
             await store_clone_overrides(self.ctx.guild.id,overrides)
 
-            await interaction.followup.send(f"Cloning is now enabled in {channel.mention}!",ephemeral=True)
+            await send_ephemeral(interaction,f"Cloning is now enabled in {channel.mention}!")
             pass
         elif element.label == "Remove filter":
             _, overrides = await assure_clone_overrides(self.ctx.guild.id)
@@ -802,7 +1132,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             overrides.pop(channel.id)
             await store_clone_overrides(self.ctx.guild.id,overrides)
 
-            await interaction.followup.send(f"The filter for {channel.mention} has been removed. The channel will now follow the default setting for cloning.",ephemeral=True)
+            await send_ephemeral(interaction,f"The filter for {channel.mention} has been removed. The channel will now follow the default setting for cloning.")
             pass
         pass
     pass
@@ -815,8 +1145,8 @@ Clone_Filter = element_factory(
     update_callback=update,
     view_interact_callback=on_interaction,
     options=[
-        ConfigButton(discord.ButtonStyle.red,"Add deny filter"), ConfigButton(discord.ButtonStyle.green,"Add allow filter"),
-        ConfigButton(discord.ButtonStyle.gray,"Remove filter",row=1)
+        ConfigButton(ButtonStyle.red,"Add deny filter"), ConfigButton(ButtonStyle.green,"Add allow filter"),
+        ConfigButton(ButtonStyle.gray,"Remove filter",row=1)
     ]
 )
 
@@ -840,7 +1170,7 @@ Clone_State.PARENT = Clone_Filter.PARENT = Clones
 async def on_interaction(self, element : discord.ui.Item, interaction : discord.Interaction):
     if isinstance(element,discord.ui.Button):
         if element.label == "Set Channel":
-            await interaction.followup.send("Please send a mention of the channel you want to use as an announcement channel.",ephemeral=True)
+            await send_ephemeral(interaction,"Please send a mention of the channel you want to use as an announcement channel.")
 
             channel = await utils.wait_for_text_channel(
                 BOT,self.ctx,
@@ -868,7 +1198,7 @@ Announcement_Channel = element_factory(
     update_callback=EMPTY_UPDATE,
     view_interact_callback=on_interaction,
     options = [
-        ConfigButton(discord.ButtonStyle.primary,"Set Channel")
+        ConfigButton(ButtonStyle.primary,"Set Channel")
     ]
 )
 
@@ -900,11 +1230,11 @@ async def on_interaction(self, element : discord.ui.Item, interaction : discord.
     if isinstance(element,discord.ui.Button):
         if element.label == "Enable":
             await change_vote_state(self.ctx.guild.id,True)
-            await interaction.followup.send("Voting is now enabled!",ephemeral=True)
+            await send_ephemeral(interaction,"Voting is now enabled!")
             pass
         elif element.label == "Disable":
             await change_vote_state(self.ctx.guild.id,False)
-            await interaction.followup.send("Voting is now enabled!",ephemeral=True)
+            await send_ephemeral(interaction,"Voting is now enabled!")
             pass
         pass
     pass
@@ -917,8 +1247,8 @@ Voting_State = element_factory(
     update_callback=update,
     view_interact_callback=on_interaction,
     options = [
-        ConfigButton(discord.ButtonStyle.green,"Enable"),
-        ConfigButton(discord.ButtonStyle.red,"Disable")
+        ConfigButton(ButtonStyle.green,"Enable"),
+        ConfigButton(ButtonStyle.red,"Disable")
     ]
 )
 
@@ -994,7 +1324,7 @@ async def override_rem_gui(bot : commands.Bot, ctx : commands.Context, waiter, i
     try:
         await override_rem(ctx.guild.id,override,obj)
     except KeyError:
-        await interaction.followup.send(not_exist_error,ephemeral=True)
+        await send_ephemeral(interaction,not_exist_error)
         obj = None # Return None as indicator for calling function
         
     return obj
@@ -1007,19 +1337,19 @@ async def update(self : ConfigElement):
 async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
     if not isinstance(element,discord.ui.Button): return
     if element.label == "Add deny override":
-        await interaction.followup.send("Please send a message mentioning the role you want to add a deny override for.",ephemeral=True)
+        await send_ephemeral(interaction,"Please send a message mentioning the role you want to add a deny override for.")
         role = await override_role(BOT,self.ctx,False)
-        await interaction.followup.send(f"Denying all users with role {role.mention} to create votes (should no prioritised role allow it)",ephemeral=True)
+        await send_ephemeral(interaction,f"Denying all users with role {role.mention} to create votes (should no prioritised role allow it)")
         pass
     elif element.label == "Add allow override":
-        await interaction.followup.send("Please send a message mentioning the role you want to add an allow override for.",ephemeral=True)
+        await send_ephemeral(interaction,"Please send a message mentioning the role you want to add an allow override for.")
         role = await override_role(BOT,self.ctx,True)
-        await interaction.followup.send(f"Allowing all users with role {role.mention} to create votes (should no prioritised role deny it)",ephemeral=True)
+        await send_ephemeral(interaction,f"Allowing all users with role {role.mention} to create votes (should no prioritised role deny it)")
         pass
     elif element.label == "Remove override":
-        await interaction.followup.send("Please send a message mentioning the role you want to remove the override for.",ephemeral=True)
+        await send_ephemeral(interaction,"Please send a message mentioning the role you want to remove the override for.")
         role = await override_rem_gui(BOT,self.ctx,utils.wait_for_role,interaction,"role_overrides","The message you sent could not be interpreted as a role.","The role you mentioned does not have an override. Exiting the action...")
-        if role is not None: await interaction.followup.send(f"Removed override for role {role.mention}.",ephemeral=True)
+        if role is not None: await send_ephemeral(interaction,f"Removed override for role {role.mention}.")
         pass
     pass
 
@@ -1031,8 +1361,8 @@ Voting_Role_Overrides = element_factory(
     update_callback=update,
     view_interact_callback=on_interaction,
     options = [
-        ConfigButton(discord.ButtonStyle.red,"Add deny override"), ConfigButton(discord.ButtonStyle.green,"Add allow override"),
-        ConfigButton(discord.ButtonStyle.primary,"Remove override",row=1)
+        ConfigButton(ButtonStyle.red,"Add deny override"), ConfigButton(ButtonStyle.green,"Add allow override"),
+        ConfigButton(ButtonStyle.primary,"Remove override",row=1)
     ]
 )
 
@@ -1049,19 +1379,19 @@ async def update(self : ConfigElement):
 async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
     if not isinstance(element,discord.ui.Button): return
     if element.label == "Add deny override":
-        await interaction.followup.send(f"Please send a message mentioning the channel you wish to set a deny override for.",ephemeral=True)
+        await send_ephemeral(interaction,f"Please send a message mentioning the channel you wish to set a deny override for.")
         channel = await override_channel(BOT,self.ctx,False)
-        await interaction.followup.send(f"A deny override was added for {channel.mention}. If no role override exists for the executing user, they cannot create a vote in this channel.",ephemeral=True)
+        await send_ephemeral(interaction,f"A deny override was added for {channel.mention}. If no role override exists for the executing user, they cannot create a vote in this channel.")
         pass
     elif element.label == "Add allow override":
-        await interaction.followup.send(f"Please send a message mentioning the channel you wish to set an allow override for.",ephemeral=True)
+        await send_ephemeral(interaction,f"Please send a message mentioning the channel you wish to set an allow override for.")
         channel = await override_channel(BOT,self.ctx,True)
-        await interaction.followup.send(f"An allow override was added for {channel.mention}. If no role override exists denying the executing user creation of votes, they can now create votes in this channel.",ephemeral=True)
+        await send_ephemeral(interaction,f"An allow override was added for {channel.mention}. If no role override exists denying the executing user creation of votes, they can now create votes in this channel.",ephemeral=True)
         pass
     elif element.label == "Remove override":
-        await interaction.followup.send(f"Please send a message mentioning the channel you wish to remove the override for.",ephemeral=True)
+        await send_ephemeral(interaction,f"Please send a message mentioning the channel you wish to remove the override for.")
         channel = await override_rem_gui(BOT,self.ctx,utils.wait_for_text_channel,interaction,"channel_overrides","The message you sent could not be interpreted as a text channel.","The channel you mentioned does not have an override. Exiting the action...")
-        if channel is not None: await interaction.followup.send(f"Removed override for role {channel.mention}.",ephemeral=True)
+        if channel is not None: await send_ephemeral(interaction,f"Removed override for role {channel.mention}.")
         pass
     pass
 
@@ -1073,8 +1403,8 @@ Voting_Channel_Overrides = element_factory(
     update_callback=update,
     view_interact_callback=on_interaction,
     options = [
-        ConfigButton(discord.ButtonStyle.red,"Add deny override"), ConfigButton(discord.ButtonStyle.green,"Add allow override"),
-        ConfigButton(discord.ButtonStyle.primary,"Remove override",row=1)
+        ConfigButton(ButtonStyle.red,"Add deny override"), ConfigButton(ButtonStyle.green,"Add allow override"),
+        ConfigButton(ButtonStyle.primary,"Remove override",row=1)
     ]
 )
 

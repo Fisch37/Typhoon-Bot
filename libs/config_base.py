@@ -82,21 +82,24 @@ class ConfigSelect(ConfigOption):
     value_range : range
     placehold_text : Optional[str]
     options : tuple[discord.SelectOption]
+    row : int = 0
 
     def __init__(
         self,
         value_range : range,
         options : tuple[discord.SelectOption],
-        placehold_text : Optional[str] = None
+        placehold_text : Optional[str] = None,
+        row : int = 0
         ):
-        self.value_range, self.placehold_text, self.options = value_range, placehold_text, options
+        self.value_range, self.placehold_text, self.options, self.row = value_range, placehold_text, options, row
 
         super().__init__(discord.ui.Select,
         {
             "placeholder":placehold_text,
             "min_values":value_range.start,
             "max_values":value_range.stop - 1,
-            "options":options
+            "options":options,
+            "row":row
         }
         )
         pass
@@ -138,7 +141,7 @@ class ConfigBase:
 
         # Calling the class specifically so that it doesn't call the update of any subclasses (like FactoryElement for example)
         self.embed.clear_fields()
-        ConfigBase.update(self)
+        await ConfigBase.update(self)
         pass
 
     async def timeout_handler(self):
@@ -153,8 +156,8 @@ class ConfigBase:
 
 
     def add_view_items(self):
-        back_button = discord.ui.Button(style=discord.ButtonStyle.primary,label="Back",row=3, disabled=self.PARENT is None)
-        main_button = discord.ui.Button(style=discord.ButtonStyle.secondary,label="Back to top",row=3, disabled=self.PARENT is None)
+        back_button = discord.ui.Button(style=discord.ButtonStyle.primary,label="Back",row=4, disabled=self.PARENT is None)
+        main_button = discord.ui.Button(style=discord.ButtonStyle.secondary,label="Back to top",row=4, disabled=self.PARENT is None)
         close_button = discord.ui.Button(style=discord.ButtonStyle.danger,label="Close",row=4)
 
         self.config_buttons = {
