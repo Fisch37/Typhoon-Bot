@@ -29,7 +29,7 @@ SESSION_FACTORY : orm.sessionmaker = ...
 
 #####################################################
 
-send_ephemeral = lambda interaction, content: send_ephemeral(interaction,content,ephemeral=True)
+async def send_ephemeral(interaction, content): await interaction.followup.send(content,ephemeral=True)
 
 async def EMPTY_UPDATE(self): ...
 
