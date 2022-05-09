@@ -1,4 +1,5 @@
 from discord import threads
+import emoji
 from sqlalchemy.exc import NoResultFound
 from loop import loop
 
@@ -60,6 +61,24 @@ async def wait_for_role(ctx : commands.Context, error_msg : str = "That message 
     pass
 
 uppercase_fraction = lambda text: sum([int(char.isupper()) for char in text])/len(text)
+def emoji_fraction(message : discord.Message) -> float:
+    emoji_count = emoji.emoji_count(message.clean_content)
+
+    investigation_text = message.clean_content
+    for emoji_obj in message.guild.emojis:
+        emoji_str = str(emoji_obj)
+        while True:
+            before, this, after = investigation_text.partition(emoji_str)
+            if this == "": break
+            investigation_text = before + after
+            emoji_count += 1
+            pass
+        pass
+
+    visual_length = emoji_count + len(investigation_text)
+    return emoji_count/visual_length
+    pass
+
 Channel = Union[discord.TextChannel,discord.VoiceChannel,discord.StageChannel]
 
 @dataclasses.dataclass()
@@ -75,6 +94,23 @@ class AutomodState:
             setattr(self,key,val)
             pass
         pass
+
+    async def save(self, guild_id : int):
+        value = 0
+        if self.capsspam:  value += 0b001
+        if self.spamspam:  value += 0b010
+        if self.emotespam: value += 0b100 
+
+        session = SESSION_FACTORY()
+        try:
+            sql_guild = await utils.get_guild(session,guild_id)
+            sql_guild.automod_state = value
+            await session.commit()
+            pass
+        finally:
+            await session.close()
+            pass
+        pass
     pass
 
 class ModConfig:
@@ -84,6 +120,14 @@ class ModConfig:
         "emoji_max_ratio","emoji_min_length",
         "spam_consequence", "caps_consequence", "emoji_consequence"
     )
+    DEFAULTS = {
+        "spam_max_message_similarity" : 0.9,
+        "spam_max_message_repetition" : 4,
+        "caps_max_ratio" : 0.8,
+        "caps_min_length" : 4,
+        "emoji_max_ratio" : 0.9,
+        "emoji_min_length" : 10
+    }
     
     def __init__(
         self, 
@@ -109,6 +153,10 @@ class ModConfig:
         
         if emoji_consequence is None: self.emoji_consequence = [False,False]
         else: self.emoji_consequence = emoji_consequence
+        pass
+
+    def to_dict(self) -> dict:
+        return {slot:getattr(self,slot) for slot in self.__slots__}
         pass
 
     def __repr__(self):
@@ -351,6 +399,10 @@ class Moderation(commands.Cog):
         pass
 
     # Automod
+    def check_for_god_role(self, member : discord.Member):
+        return len(self.GOD_ROLES[member.guild.id].intersection({role.id for role in member.roles})) > 0
+        pass
+
     async def spam_actions(self, message : discord.Message, settings : ModConfig):
         response = "Is there an echo in here? (Spam Automod)"
         if settings.spam_consequence[0]:
@@ -377,18 +429,31 @@ class Moderation(commands.Cog):
         add_logging_event(Event(Event.AUTOMOD_CAPS,message.guild,{"message":message,"member":message.author}))
         pass
 
+    async def emoji_actions(self, message : discord.Message, settings : ModConfig):
+        response = "Wow there! Don't get overly emotional! (Emoji Spam Automod)"
+        if settings.emoji_consequence[0]:
+            await message.delete()
+            pass
+        if settings.emoji_consequence[1]:
+            response = "".join((response,"\nMy moderators will hear about this!"))
+            pass
+
+        await message.channel.send(response,delete_after=5)
+
+        add_logging_event(Event(Event.AUTOMOD_EMOTE,message.guild,{"message":message,"member":message.author}))
+        pass
+
     @commands.Cog.listener("on_message")
     async def spam_listener(self, message : discord.Message):
         if message.author.bot: return # Ignore messages from bots
-        if  not self.AUTOMODS[message.guild.id].spamspam or \
-            len(self.GOD_ROLES[message.guild.id].intersection({role.id for role in message.author.roles})) > 0: return # Don't check for gods
+        if  not self.AUTOMODS[message.guild.id].spamspam or self.check_for_god_role(message.author): return # Don't check for gods
         if message.guild.id not in self.AUTOMOD_SETTINGS.keys(): # Load in default settings if neccessary
             self.AUTOMOD_SETTINGS[message.guild.id] = ModConfig()
             pass
         
         self.LAST_MESSAGES.setdefault(message.guild.id,{})
         self.LAST_MESSAGES[message.guild.id].setdefault(message.channel.id,{})
-        self.LAST_MESSAGES[message.guild.id][message.channel.id].setdefault(message.author.id,[None,0])
+        self.LAST_MESSAGES[message.guild.id][message.channel.id].setdefault(message.author.id,[None,1])
 
         spam_data = self.LAST_MESSAGES[message.guild.id][message.channel.id][message.author.id] # Using list instead of unpacking for easier manipulation of data
         settings = self.AUTOMOD_SETTINGS[message.guild.id]
@@ -409,8 +474,7 @@ class Moderation(commands.Cog):
     @commands.Cog.listener("on_message")
     async def caps_listener(self, message : discord.Message):
         if message.author.bot: return # Ignore messages from bots
-        if  not self.AUTOMODS[message.guild.id].capsspam or \
-            len(self.GOD_ROLES[message.guild.id].intersection({role.id for role in message.author.roles})) > 0: return # Don't check for gods
+        if  not self.AUTOMODS[message.guild.id].capsspam or self.check_for_god_role(message.author): return # Don't check for gods
         if message.guild.id not in self.AUTOMOD_SETTINGS.keys(): # Load in default settings if neccessary
             self.AUTOMOD_SETTINGS[message.guild.id] = ModConfig()
             pass
@@ -421,6 +485,24 @@ class Moderation(commands.Cog):
             caps_fraction : float = await asyncio.get_event_loop().run_in_executor(None,uppercase_fraction,message.clean_content)
             if caps_fraction > settings.caps_max_ratio:
                 await self.caps_actions(message,settings)
+                pass
+            pass
+        pass
+
+    @commands.Cog.listener("on_message")
+    async def emote_listener(self, message : discord.Message):
+        if message.author.bot: return # Ignore messages from bots
+        
+        automod_state = self.AUTOMODS[message.guild.id]
+        if not automod_state.emotespam or self.check_for_god_role(message.author): return # Still don't check for gods (the whole point is that they're unaffected)
+
+        self.AUTOMOD_SETTINGS.setdefault(message.guild.id,ModConfig())
+        settings = self.AUTOMOD_SETTINGS[message.guild.id]
+
+        if len(message.clean_content) >= settings.caps_min_length: # Assure message meets minimum length of content
+            emote_fraction : float = await asyncio.get_event_loop().run_in_executor(None,emoji_fraction,message)
+            if emote_fraction > settings.emoji_max_ratio:
+                await self.emoji_actions(message,settings)
                 pass
             pass
         pass
@@ -705,7 +787,7 @@ class Moderation(commands.Cog):
         pass
 
     # SQL Moderation collector
-    async def moderation_inserter(self,sqlguild : Optional[Guild],*,guild_id : int = None):
+    async def insert_one_moderation_entry(self,sqlguild : Optional[Guild],*,guild_id : int = None):
         guild_id = int(sqlguild.id) if sqlguild is not None else guild_id
         
         # Anarchy channels
@@ -746,7 +828,7 @@ class Moderation(commands.Cog):
             sqlobjs : list[Guild] = result.scalars().all()
             
             for sqlguild in sqlobjs:
-                await self.moderation_inserter(sqlguild)
+                await self.insert_one_moderation_entry(sqlguild)
                 pass
         finally:
             await session.close()
@@ -760,7 +842,7 @@ class Moderation(commands.Cog):
 
             sqlguild : Optional[Guild] = result.scalar_one_or_none()
 
-            await self.moderation_inserter(sqlguild,guild_id=guild.id)
+            await self.insert_one_moderation_entry(sqlguild,guild_id=guild.id)
         finally:
             await session.close()
         pass
