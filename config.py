@@ -369,42 +369,50 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
     if isinstance(element, discord.ui.Button):
         if element.label == "Enable":
             await change_automod_setting_state(self.ctx.guild.id,"capsspam",True)
+            await send_ephemeral(interaction,"Caps Spam Automod is now enabled!")
             pass
         elif element.label == "Disable":
             await change_automod_setting_state(self.ctx.guild.id,"capsspam",False)
+            await send_ephemeral(interaction,"Caps Spam Automod is now disabled!")
             pass
 
         elif element.label == "Change Minimum Length":
-            await send_ephemeral(interaction,"")
+            await send_ephemeral(interaction,"Please enter an integer denoting the minimum length for a message to be checked for Caps Spam.")
 
             min_length = await specified_convert(
                 self.ctx,utils.IntConverter(),
-                "",
+                "The number you entered could not be interpreted as a positive integer. Make sure there are no trailing whitespaces or accidental dots in your message.",
                 check = lambda length: length > 0
             )
             await change_mod_config_value(self.ctx.guild.id,"caps_min_length",min_length)
 
-            await send_ephemeral(interaction,"")
+            await send_ephemeral(interaction,f"Changed minimum message length to {min_length}!")
             pass
         elif element.label == "Reset Minimum Length":
             val = "caps_min_length"
             await change_mod_config_value(self.ctx.guild.id,val,ModConfig.DEFAULTS[val])
+            
+            await send_ephemeral(interaction,f"Minimum length now reset to {ModConfig.DEFAULTS[val]}")
             pass
 
         elif element.label == "Change Maximum Ratio":
-            await send_ephemeral(interaction,"")
+            await send_ephemeral(interaction,"Please enter a decimal number describing the maximum percentage of caps a message may have.")
 
             percentage = await specified_convert(
                 self.ctx, utils.FloatConverter(),
-                "",
-                check = lambda percentage: percentage > 0 and percentage < 100
+                "The number you entered could not be interpreted as a valid percentage. Make sure to use `.` instead of `,` and that your value is between 0 and 100.",
+                check = lambda percentage: percentage > 0 and percentage <= 100
             )
             ratio = percentage/100 # Getting percentage for ease of use, but needs ratio internally
             await change_mod_config_value(self.ctx.guild.id,"caps_max_ratio",ratio)
+            
+            await send_ephemeral(interaction,f"Maximum allowed caps/no caps ratio is now set to {percentage:1f}%!")
             pass
         elif element.label == "Reset Maximum Ratio":
             val = "caps_max_ratio"
             await change_mod_config_value(self.ctx.guild.id,val,ModConfig.DEFAULTS[val])
+
+            await send_ephemeral(interaction,f"Reset maximum allowed caps/no caps ratio to {ModConfig.DEFAULTS[val]*100:1f}%!")
             pass
         pass
     else:
@@ -455,17 +463,19 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
     if isinstance(element, discord.ui.Button):
         if element.label == "Enable":
             await change_automod_setting_state(self.ctx.guild.id,"emotespam",True)
+            await send_ephemeral(interaction,"Emoji Spam Automod is now enabled!")
             pass
         elif element.label == "Disable":
             await change_automod_setting_state(self.ctx.guild.id,"emotespam",False)
+            await send_ephemeral(interaction,"Emoji Spam Automod is now disabled!")
             pass
 
         elif element.label == "Change Minimum Length":
-            await send_ephemeral(interaction,"")
+            await send_ephemeral(interaction,"Please enter an integer denoting the minimum length for a message to be checked for Emoji Spam.")
 
             min_length = await specified_convert(
                 self.ctx,utils.IntConverter(),
-                "",
+                "The number you entered could not be interpreted as a positive integer. Make sure there are no trailing whitespaces or accidental dots in your message.",
                 check = lambda length: length > 0
             )
             await change_mod_config_value(self.ctx.guild.id,"caps_min_length",min_length)
@@ -478,12 +488,12 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             pass
 
         elif element.label == "Change Maximum Ratio":
-            await send_ephemeral(interaction,"")
+            await send_ephemeral(interaction,"Please enter a decimal number describing the maximum percentage of emojis a message may have.")
 
             percentage = await specified_convert(
                 self.ctx, utils.FloatConverter(),
-                "",
-                check = lambda percentage: percentage > 0 and percentage < 100
+                "The number you entered could not be interpreted as a positive integer. Make sure there are no trailing whitespaces or accidental dots in your message.",
+                check = lambda percentage: percentage > 0 and percentage <= 100
             )
             ratio = percentage/100 # Getting percentage for ease of use, but needs ratio internally
             await change_mod_config_value(self.ctx.guild.id,"caps_max_ratio",ratio)
