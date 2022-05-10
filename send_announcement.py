@@ -9,8 +9,8 @@ SESSION_FACTORY : orm.sessionmaker = ...
 BOT : commands.Bot = ...
 CONFIG_FILE = "config.cfg"
 
-MESSAGE = """"""
-raise RuntimeError("To execute this you need to set a message!")
+MESSAGE = """Test"""
+if len(MESSAGE) == 0: raise RuntimeError("Don't forget to actually attach a message...")
 
 loop = asyncio.new_event_loop()
 
@@ -54,6 +54,12 @@ async def send_announcement():
     pass
 
 def main():
+    print(MESSAGE)
+    if input("Are you sure that you want to send this message? (y/N) ").upper() != "Y":
+        print("Message sending cancelled")
+        return
+        pass
+
     global SESSION_FACTORY, BOT
 
     CONFIG = cfg.load(CONFIG_FILE)
