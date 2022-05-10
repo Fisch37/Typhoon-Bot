@@ -3,12 +3,11 @@ import discord
 from discord.ext import commands, tasks
 from discord.ext.commands.converter import Option
 import aiohttp
-from requests import session
 
 from libs import utils, config
 from libs.interpret_levelup import format_msg as format_lvlup_template
 from loop import loop
-import logging, random, asyncio, time
+import logging, random, asyncio, time, json, io
 from datetime import datetime
 from moderation import RoleId
 
@@ -417,9 +416,13 @@ class Leveling(commands.Cog):
 
         await ctx.send("Level import complete! Check /leaderboard",ephemeral=True)
         pass
-    
-    @commands.command("import_mee6",brief="Import this servers level stats from the Mee6 Bot",description="Import this servers level stats from the Mee6 Bot.\nThis might replace your old stats and if so it will ask for confirmation.")
+
+    @commands.group("level_settings")
     @utils.perm_message_check("https://tenor.com/view/you-shall-not-pass-lotr-do-not-enter-not-allowed-scream-gif-16729885\nYou don't have permissions to execute this command. (Requires Manage Server)",manage_guild=True)
+    async def level_settings(self, ctx : commands.Context):
+        pass
+
+    @level_settings.command("import_mee6",brief="Import this servers level stats from the Mee6 Bot",description="Import this servers level stats from the Mee6 Bot.\nThis might replace your old stats and if so it will ask for confirmation.")
     async def import_mee6(self, ctx : commands.Context):
         stats = self.LEVELS.get(ctx.guild.id)
         if stats is not None and len(stats.internal.items()) > 0:
@@ -431,6 +434,20 @@ class Leveling(commands.Cog):
         await ctx.send("The import process will now start. This might take a few minutes.",ephemeral=True)
 
         asyncio.create_task(self.mee6_import_worker(ctx))
+        pass
+
+    @level_settings.command("export",brief="Export the level statistics to a file")
+    async def level_export(self, ctx : commands.Context):
+        stats = self.LEVELS.get(ctx.guild.id)
+        if stats is None:
+            await ctx.send("There is no leveling on this server yet. If you already have it enabled, this means it is empty.")
+            pass
+
+        raw_stats = stats.to_raw()
+
+        file_stream = io.StringIO(json.dumps(raw_stats))
+        file = discord.File(file_stream,f"levels-{ctx.guild.id}.json")
+        await ctx.send(file=file,ephemeral=True)
         pass
 
     @tasks.loop(minutes=1,loop=loop)
