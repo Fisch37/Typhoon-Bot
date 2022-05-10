@@ -1,7 +1,9 @@
-from typing import Optional
+from typing import Optional, Union
 import discord
 from discord.ext import commands, tasks
 from discord.ext.commands.converter import Option
+import aiohttp
+from requests import session
 
 from libs import utils, config
 from libs.interpret_levelup import format_msg as format_lvlup_template
@@ -11,6 +13,9 @@ from datetime import datetime
 from moderation import RoleId
 
 from ormclasses import *
+
+MEE6_LEADERBOARD_FORMAT = "https://mee6.xyz/api/plugins/levels/leaderboard/{0}?page={1}"
+MEE6_AUTH_TOKEN = "ODE1M2Q4YzYwODAwMDI1.NjI3YWExY2E=.nZ5k9GdFav6qRyyv4doj-bAjdAc"
 
 CONFIG : config.Config = ...
 WEBHOOK_POOL : utils.WebhookPool = ...
@@ -346,6 +351,86 @@ class Leveling(commands.Cog):
             embed.description = "It's empty here... Just a vast nothingness"
 
         await ctx.send(embed=embed,ephemeral=True)
+        pass
+
+    async def mee6_import_worker(self, ctx : commands.Context):
+        async def get_info(session : aiohttp.ClientSession, page : int) -> tuple[int, dict, Union[dict,str]]:
+            async with session.get(MEE6_LEADERBOARD_FORMAT.format(ctx.guild.id,page)) as resp:
+                return resp.status, resp.headers, await resp.json() if resp.content_type == "application/json" else await resp.text()
+                pass
+            pass
+
+
+        player_stats = []
+        page = 0
+        async with aiohttp.ClientSession(headers={"Authorization":MEE6_AUTH_TOKEN}) as session:
+            while True:
+                status, headers, potential_data = await get_info(session,page)
+
+                if status == 200:
+                    if len(potential_data["players"]) == 0: break
+                    player_stats.extend(potential_data["players"])
+
+                    page += 1
+                    await asyncio.sleep(5)
+                    pass
+                elif status == 404:
+                    await ctx.send("Mee6 doesn't seem know this server. There is no information to import.",ephemeral=True)
+                    pass
+                elif status == 429:
+                    await asyncio.sleep(int(headers["retry-after"])+1)
+                    pass
+                else:
+                    await asyncio.sleep(5)
+                    pass
+                pass
+            pass
+        
+        await ctx.send("All leveling data extracted. Now adding them to the database.",ephemeral=True)
+
+        self.LEVELS.setdefault(ctx.guild.id,LevelStats())
+        typhoon_levels = self.LEVELS[ctx.guild.id]
+        for stat in player_stats:
+            p_id = stat["id"]
+            p_xp = stat["xp"]
+            p_lvl= stat["level"]
+
+            typhoon_levels.set(int(p_id),int(p_xp),int(p_lvl),overwrite=True)
+            pass
+
+        session : asql.AsyncSession = SESSION_FACTORY()
+        try:
+            result : CursorResult = await session.execute(sql.select(GuildLevels).where(GuildLevels.guild_id == str(ctx.guild.id)))
+            try:
+                sqlobj = result.scalar_one()
+            except KeyError:
+                sqlobj = GuildLevels(guild_id = str(ctx.guild.id))
+                session.add(sqlobj)
+                pass
+
+            sqlobj.levels = typhoon_levels.to_raw()
+            await session.commit()
+            pass
+        finally:
+            await session.close()
+            pass
+
+        await ctx.send("Level import complete! Check /leaderboard",ephemeral=True)
+        pass
+    
+    @commands.command("import_mee6",brief="Import this servers level stats from the Mee6 Bot",description="Import this servers level stats from the Mee6 Bot.\nThis might replace your old stats and if so it will ask for confirmation.")
+    @utils.perm_message_check("https://tenor.com/view/you-shall-not-pass-lotr-do-not-enter-not-allowed-scream-gif-16729885\nYou don't have permissions to execute this command. (Requires Manage Server)",manage_guild=True)
+    async def import_mee6(self, ctx : commands.Context):
+        stats = self.LEVELS.get(ctx.guild.id)
+        if stats is not None and len(stats.internal.items()) > 0:
+            if not await utils.confirmation_interact(ctx,"There is already a leveling statistic for this server. Running this command will inadvertantly replace it. Are you sure you want to do this?"):
+                return
+                pass
+            pass
+
+        await ctx.send("The import process will now start. This might take a few minutes.",ephemeral=True)
+
+        asyncio.create_task(self.mee6_import_worker(ctx))
         pass
 
     @tasks.loop(minutes=1,loop=loop)
