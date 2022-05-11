@@ -477,12 +477,13 @@ class Moderation(commands.Cog):
     LAST_MESSAGES : dict[GuildId,dict[ChannelId,dict[MemberId,list[Optional[str],int]]]] = {}
 
     def __init__(self):
-        self.ANARCHIES          = BOT.DATA.ANARCHIES
-        self.GOD_ROLES          = BOT.DATA.GOD_ROLES
-        self.AUTOMODS           = BOT.DATA.AUTOMODS
-        self.LOGGING_CHANNEL    = BOT.DATA.LOGGING_CHANNEL
-        self.AUTOMOD_SETTINGS   = BOT.DATA.AUTOMOD_SETTINGS
-        self.LOGGING_SETTINGS   = BOT.DATA.LOGGING_SETTINGS
+        # Calling the class is necessary here because otherwise Python will do ~weird~ stuf
+        self.__class__.ANARCHIES          = BOT.DATA.ANARCHIES
+        self.__class__.GOD_ROLES          = BOT.DATA.GOD_ROLES
+        self.__class__.AUTOMODS           = BOT.DATA.AUTOMODS
+        self.__class__.LOGGING_CHANNEL    = BOT.DATA.LOGGING_CHANNEL
+        self.__class__.AUTOMOD_SETTINGS   = BOT.DATA.AUTOMOD_SETTINGS
+        self.__class__.LOGGING_SETTINGS   = BOT.DATA.LOGGING_SETTINGS
         super().__init__()
 
         self.warn_archive_task.start()
@@ -626,6 +627,8 @@ class Moderation(commands.Cog):
         warnobj = Warn(guild,target,author,datetime.utcnow(),reason)
         asyncio.create_task(self.on_new_warn(warnobj))
         await warnobj.save()
+
+        add_logging_event(Event(Event.MOD_WARN,guild,{"member":target,"actor":author,"reason":reason}))
         pass
 
     async def on_new_warn(self, warning : Warn):
@@ -875,7 +878,7 @@ class Moderation(commands.Cog):
 
     @logging.command("channel",brief="Set the channel the logger will write to.")
     async def set_log_channel(self, ctx : commands.Context, channel : discord.TextChannel = Option(None,description="The channel to log events in. Leave empty to reset")):
-        if not isinstance(channel,discord.TextChannel):
+        if channel is not None and not isinstance(channel,discord.TextChannel):
             await ctx.send("The channel you passed does not seem to be a text channel. Please check your input",ephemeral=True)
             return
             pass
@@ -1130,6 +1133,7 @@ class Event:
     Mute    = dict[Literal["manual","member","reason","until","actor"],Union[bool,discord.Member,str,int]]
     Unmute  = dict[Literal["member","reason","actor"],Union[discord.Member,str]]
     Automod = dict[Literal["member","message"],Union[discord.Member,discord.Message]]
+    Warn    = dict[Literal["member","reason","actor"],Union[discord.Member,str]]
     GuildChannel_Create = dict[Literal["channel"],Channel]
     GuildChannel_Delete = dict[Literal["channel"],Channel]
     GuildChannel_Update = dict[Literal["before"],Literal["after"]]
@@ -1156,6 +1160,7 @@ class Event:
     AUTOMOD_EMOTE           = 0b0000000001010
     MOD_UNBAN               = 0b0000000001011
     MOD_BAN                 = 0b0000000001100
+    MOD_WARN                = 0b0000000001101
     MOD_MASK                = 0b0000000001000
 
     GUILD_CHANNEL_CREATE    = 0b0000000010000
@@ -1520,7 +1525,7 @@ def assemble_logging_embed(type : str, significance : discord.Colour, member : U
     if message is not None:
         embed.description = "".join((embed.description,f"Regarding message on <t:{int(message.created_at.timestamp())}>:\n{message.clean_content}\n\n"))
         pass
-    embed.description = "".join((embed.description,f"Reason: {reason}\n"))
+    embed.description = "".join((embed.description,f"Reason:\n```\n{reason}```\n"))
     if extra_description is not None:
         embed.description = "".join((embed.description,extra_description))
         pass
@@ -1535,12 +1540,16 @@ async def handle_event(event : Event):
 
     if event.type & Event.MOD_MASK:
         if event.type not in (Event.MOD_BAN, Event.MOD_UNBAN):
-            event_data : Event.Automod = event.data
-            if   event.type == Event.AUTOMOD_CAPS: type_str = "Capslock"
-            elif event.type == Event.AUTOMOD_SPAM: type_str = "Spam"
-            elif event.type == Event.AUTOMOD_EMOTE:type_str = "Emotespam"
+            if event.type == Event.MOD_WARN:
+                embed = assemble_logging_embed("Warning",Severity.HIGH,**event.data)
+                pass
+            else:
+                event_data : Event.Automod = event.data
+                if   event.type == Event.AUTOMOD_CAPS: type_str = "Capslock"
+                elif event.type == Event.AUTOMOD_SPAM: type_str = "Spam"
+                elif event.type == Event.AUTOMOD_EMOTE:type_str = "Emotespam"
 
-            embed = assemble_logging_embed(type_str,Severity.HIGH,event_data["member"],event_data["member"].guild.me,event_data["message"],"Automod Detection")
+                embed = assemble_logging_embed(type_str,Severity.HIGH,event_data["member"],event_data["member"].guild.me,event_data["message"],"Automod Detection")
             pass
         else:
             if   event.type == Event.MOD_BAN: type_str = "Banned User"
