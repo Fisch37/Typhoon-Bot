@@ -11,6 +11,7 @@ Base = orm.declarative_base()
 
 MutableListType = MutableList.as_mutable(sql.JSON)
 NestedMutableListType = NestedMutableList.as_mutable(sql.JSON)
+MutableDictType = mutable_json_type(sql.JSON,True)
 
 class Guild(Base):
     __tablename__="guilds"
@@ -25,17 +26,17 @@ class Guild(Base):
     logging_channel         = sql.Column(sql.String(20),                                     nullable=True )
     logging_settings        = sql.Column(sql.Integer,                                        nullable=False,default=0)
     warn_settings           = sql.Column(sql.Integer,                                        nullable=False,default=0)
-    automod_settings        = sql.Column(mutable_json_type(sql.JSON,True),                   nullable=True)
+    automod_settings        = sql.Column(MutableDictType,                                    nullable=True)
 
-    clone_filter            = sql.Column(mutable_json_type(sql.JSON),                        nullable=False,default=sqlalchemy_json.MutableDict())
+    clone_filter            = sql.Column(MutableDictType,                                    nullable=False,default=sqlalchemy_json.MutableDict())
     clone_enabled           = sql.Column(sql.Boolean,                                        nullable=False,default=True)
 
     timezone                = sql.Column(mysql.TINYTEXT,                                     nullable=True )
     
     reaction_roles          = sql.Column(MutableListType,                                    nullable=False,default=[])
-    vote_permissions        = sql.Column(mutable_json_type(sql.JSON,True),                   nullable=False,default=sqlalchemy_json.NestedMutableDict())
+    vote_permissions        = sql.Column(MutableDictType,                                    nullable=False,default=sqlalchemy_json.NestedMutableDict())
     votes                   = sql.Column(MutableListType,                                    nullable=False,default=[])
-    integrations            = sql.Column(mutable_json_type(sql.JSON,True),                   nullable=False,default={})
+    integrations            = sql.Column(MutableDictType,                                    nullable=False,default={})
     announcement_override   = sql.Column(sql.String(20),                                     nullable=True )
     mute_role_id            = sql.Column(sql.String(20),                                     nullable=True )
 
@@ -51,14 +52,15 @@ class ReactionRoles(Base):
     __tablename__="reaction_roles"
 
     message_id            = sql.Column(sql.String(20),                   primary_key=True, nullable=False)
-    react_roles           = sql.Column(mutable_json_type(sql.JSON,True),                   nullable=False)
+    react_roles           = sql.Column(MutableDictType,                                    nullable=False)
     pass
 
 class GuildWarning(Base):
     __tablename__="warnings"
 
     guild_id              = sql.Column(sql.String(20),                   primary_key=True, nullable=True )
-    warns                 = sql.Column(NestedMutableListType,                              nullable=True )
+    warns                 = sql.Column(NestedMutableListType,                              nullable=False,default=sqlalchemy_json.NestedMutableList())
+    warning_counts        = sql.Column(MutableDictType,                                    nullable=False,default=sqlalchemy_json.NestedMutableDict())
     pass
 
 class GuildMutes(Base):

@@ -38,6 +38,17 @@ async def get_sql_guild(guild_id : int) -> tuple[Guild,asql.AsyncSession]:
     return obj, session
     pass
 
+async def get_warnings(session : asql.AsyncSession, guild_id : int):
+    result : CursorResult = await session.execute(sql.select(GuildWarning).where(GuildWarning.guild_id == str(guild_id)))
+    warnings = result.scalar_one_or_none()
+    if warnings is None:
+        warnings = GuildWarning(guild_id=str(guild_id))
+        session.add(warnings)
+        pass
+
+    return warnings
+    pass
+
 async def wait_for_role(ctx : commands.Context, error_msg : str = "That message does not have a role associated to it. Please try again",*, check = None, return_message : bool = False) -> Union[discord.Role,tuple[discord.Role,discord.Message]]:
     converter = commands.RoleConverter()
     while True:
@@ -178,6 +189,88 @@ class ModConfig:
         return obj
         pass
     pass
+
+@dataclasses.dataclass(frozen=True,order=True)
+class Warn:
+    guild  : discord.Guild
+    target : discord.Member
+    author : discord.Member
+    time : datetime = dataclasses.field(compare=True)
+    reason : str
+
+    def to_raw(self) -> tuple[int,int,float,str]:
+        return self.target.id, self.author.id, self.time.timestamp(), self.reason
+        pass
+
+    async def save(self):
+        guild = self.target.guild
+
+        session : asql.AsyncSession = SESSION_FACTORY()
+        try:
+            result : CursorResult = await session.execute(sql.select(GuildWarning).where(GuildWarning.guild_id == str(guild.id)))
+            sqlobj = result.scalar_one_or_none()
+            if sqlobj is None:
+                sqlobj = GuildWarning(guild_id = str(guild.id), warns=[])
+                session.add(sqlobj)
+                pass
+
+            sqlobj.warns.append(self.to_raw())
+            await session.commit()
+            pass
+        finally:
+            await session.close()
+            pass
+        pass
+
+    @staticmethod
+    def from_database(guild : discord.Guild, member_id : int, author_id : int, timestamp : float, reason : str) -> "Warn":
+        member = guild.get_member(member_id)
+        author = guild.get_member(author_id)
+        time = datetime.fromtimestamp(timestamp)
+        return Warn(guild,member,author,time,reason)
+        pass
+
+    @staticmethod
+    async def database_load_all(guild : discord.Guild) -> tuple["Warn"]:
+        session : asql.AsyncSession = SESSION_FACTORY()
+        try:
+            result : CursorResult = await session.execute(sql.select(GuildWarning.warns).where(GuildWarning.guild_id == str(guild.id)))
+            raw_warnings = result.scalar_one_or_none() or []
+
+            converted = []
+            for raw in raw_warnings:
+                member_id = int(raw[0])
+                author_id = int(raw[1])
+                timestamp = float(raw[2])
+                reason = float(raw[3])
+
+                converted.append(Warn.from_database(guild,member_id,author_id,timestamp,reason))
+                pass
+            pass
+        finally:
+            await session.close()
+            pass
+
+        converted.sort()
+
+        return tuple(converted)
+        pass
+
+    @staticmethod
+    async def database_save_all(guild : discord.Guild, warnings : list["Warn"]):
+        session : asql.AsyncSession = SESSION_FACTORY()
+        try:
+            result : CursorResult = await session.execute(sql.select(GuildWarning).where(GuildWarning.guild_id == str(guild.id)))
+            sqlobj : GuildWarning = result.scalar_one()
+            sqlobj.warns = [warn.to_raw() for warn in warnings]
+            await session.commit()
+            pass
+        finally:
+            await session.close()
+            pass
+        pass
+    pass
+
 
 GuildId = ChannelId = RoleId = MemberId = int
 Capsspam = Spamspam = Emotespam = bool
@@ -391,6 +484,8 @@ class Moderation(commands.Cog):
         self.AUTOMOD_SETTINGS   = BOT.DATA.AUTOMOD_SETTINGS
         self.LOGGING_SETTINGS   = BOT.DATA.LOGGING_SETTINGS
         super().__init__()
+
+        self.warn_archive_task.start()
         pass
 
     def cog_unload(self):
@@ -409,6 +504,8 @@ class Moderation(commands.Cog):
             await message.delete()
             pass
         if settings.caps_consequence[1]:
+            await self.create_new_warning(message.guild,message.author,message.guild.me,"Automod Message Spam")
+
             response = "".join((response,"\nMy moderators will hear about this!"))
         
         await message.channel.send(response,delete_after=5)
@@ -422,6 +519,8 @@ class Moderation(commands.Cog):
             await message.delete()
             pass
         if settings.caps_consequence[1]:
+            await self.create_new_warning(message.guild,message.author,message.guild.me,"Automod Caps Spam")
+
             response = "".join((response,"\nMy moderators will hear about this!"))
 
         await message.channel.send(response,delete_after=5)
@@ -435,6 +534,8 @@ class Moderation(commands.Cog):
             await message.delete()
             pass
         if settings.emoji_consequence[1]:
+            await self.create_new_warning(message.guild,message.author,message.guild.me,"Automod Emoji Spam")
+
             response = "".join((response,"\nMy moderators will hear about this!"))
             pass
 
@@ -505,6 +606,58 @@ class Moderation(commands.Cog):
                 await self.emoji_actions(message,settings)
                 pass
             pass
+        pass
+
+    # Warnings
+
+    @commands.command("warn")
+    @utils.perm_message_check("Oh? Warnings? I'll give you warnings! (No Permission -- Need Manage Roles)", manage_roles=True)
+    async def warn_user(self, ctx : commands.Context, target : discord.Member = Option(description="The member you want to warn"), reason : str = Option(description="A reason for warning said member",default=None)):
+        if len(reason) > 200:
+            await ctx.send(f"Please keep your reasons short and compact. Was {len(reason)} characters, should be 200 or below",ephemeral=True)
+            return
+
+        await self.create_new_warning(ctx.guild,target,ctx.author,reason)
+
+        await ctx.send(f"Warned {target.mention} with reason\n```\n{reason}```",ephemeral=True)
+        pass
+
+    async def create_new_warning(self, guild : discord.Guild, target : discord.Member, author : discord.Member, reason : str):
+        warnobj = Warn(guild,target,author,datetime.utcnow(),reason)
+        asyncio.create_task(self.on_new_warn(warnobj))
+        await warnobj.save()
+        pass
+
+    async def on_new_warn(self, warning : Warn):
+        guild = warning.guild
+        
+        session : asql.AsyncSession = SESSION_FACTORY()
+        try:
+            warnings = await get_warnings(session,guild.id)
+            warnings.warning_counts.setdefault(str(guild.id),0)
+            warnings.warning_counts[str(guild.id)] += 1
+
+            await session.commit()
+            pass
+        finally:
+            await session.close()
+            pass
+        pass
+
+    async def single_archiver(self, guild : discord.Guild, current_timestamp : float):
+        warnings = await Warn.database_load_all(guild)
+
+        is_outdated = lambda warn: (warn.time.timestamp() - current_timestamp) > CONFIG.WARNING_ARCHIVE_TIME*60
+        new_warnings = [warn for warn in warnings if not is_outdated()]
+
+        await Warn.database_save_all(guild,new_warnings)
+        pass
+
+    @tasks.loop(minutes=5,loop=loop)
+    async def warn_archive_task(self):
+        timestamp = datetime.utcnow().timestamp()
+
+        await asyncio.gather(*[self.single_archiver(guild,timestamp) for guild in BOT.guilds])
         pass
 
     # Channel Mod
