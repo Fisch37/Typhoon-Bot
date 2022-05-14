@@ -202,7 +202,7 @@ class Leveling(commands.Cog):
         lvlup_channel = message.guild.get_channel(lvl_settings.channel_id) if lvl_settings.channel_id is not None else message.channel
 
         msg = format_lvlup_template(lvl_settings.level_msg,message.author,message.guild,levels,lvlup_channel,message.channel)
-        await message.channel.send(msg)
+        await lvlup_channel.send(msg)
         pass
 
     def get_reward_role_msg(self, member : discord.Member, role : discord.Role, i : int) -> str:
@@ -246,6 +246,7 @@ class Leveling(commands.Cog):
         
         if guild is None or member.bot: return # We don't need any bot levelling, do we? # Nor do we need any commands to start this
 
+        self.LEVEL_SETTINGS.setdefault(guild.id,LevelSettings())
         level_settings = self.LEVEL_SETTINGS[guild.id] # This will throw KeyError sometimes, but I'll fix that later. It's later now
 
         if not level_settings.enabled: return # Should be obvious, I think
@@ -307,7 +308,7 @@ class Leveling(commands.Cog):
             pass
         if user is None: user = ctx.author
         if user.bot:
-            await ctx.send("Bots? Bots don't get any XP!")
+            await ctx.send("Bots? Bots don't get any XP!",ephemeral=True)
             return
 
         levels = self.LEVELS.get(ctx.guild.id,LevelStats())

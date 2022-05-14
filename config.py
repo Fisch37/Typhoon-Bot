@@ -660,8 +660,8 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             lvl_settings = assure_level_settings(self.ctx.guild.id)
             gain = await specified_convert(
                 self.ctx,utils.IntConverter(),
-                "Your message could not be interpreted as a positive integer (i.e. whole number >0). Also check that the value is not larger than the current Upper Gain.",
-                lambda new_lower_gain: new_lower_gain <= lvl_settings.upper_gain
+                "Your message could not be interpreted as a positive integer (i.e. whole number >0). Also check that the value is not larger than the current Upper Gain and less than 256.",
+                lambda new_lower_gain: new_lower_gain <= lvl_settings.upper_gain and new_lower_gain < 256
             )
 
             await update_gain("lower_gain","lower_xp_gain",gain)
@@ -674,8 +674,8 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             lvl_settings = assure_level_settings(self.ctx.guild.id)
             gain = await specified_convert(
                 self.ctx,utils.IntConverter(),
-                "Your message could not be interpreted as a positive integer (i.e. whole number >0). Also check that the value is not larger than the current Upper Gain.",
-                lambda new_upper_gain: new_upper_gain >= lvl_settings.lower_gain
+                "Your message could not be interpreted as a positive integer (i.e. whole number >0). Also check that the value is not larger than the current Upper Gain and less than 256.",
+                lambda new_upper_gain: new_upper_gain >= lvl_settings.lower_gain and new_upper_gain < 256
             )
             
             await update_gain("upper_gain","upper_xp_gain",gain)
@@ -913,7 +913,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
 Lvl_msgs = element_factory(
     "Level Up Messages",
     short_description="Set a custom message to be sent when a user levels up.",
-    long_description="When a user gains enough XP, they will gain a Level Up. These Level Ups are usually sent in the channel they sent their last message and take the form of `Geez, {user.mention}! You leveled up to level {level}`.\nHere you can set a custom channel for the level ups and also change the message sent.",
+    long_description="When a user gains enough XP, they will gain a Level Up. These Level Ups are usually sent in the channel they sent their last message and take the form of `Geez, {user_mention}! You leveled up to level {level}`.\nHere you can set a custom channel for the level ups and also change the message sent.",
     colour = discord.Colour.brand_green(),
     update_callback=update,
     view_interact_callback=on_interaction,

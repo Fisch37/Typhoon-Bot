@@ -147,7 +147,7 @@ class Fun(commands.Cog):
                 await ctx.send("As there is no actual override for this channel, nothing was changed. I admire your engagement, though!",ephemeral=True)
                 pass
             else:
-                await ctx.send("The override was removed. This channel will now conform to the regular settings.")
+                await ctx.send("The override was removed. This channel will now conform to the regular settings.", ephemeral=True)
                 pass
 
             self.CLONE_OVERRIDES.setdefault(ctx.guild.id,[None,None])
@@ -175,7 +175,7 @@ class Fun(commands.Cog):
             pass
         del filterResult
         
-        self.CLONE_OVERRIDES[ctx.guild.id] = (bool(isEnabled),dict(cloneOverride)) # Copy overrides to RAM for the listener
+        self.CLONE_OVERRIDES[ctx.guild.id] = [bool(isEnabled),dict(cloneOverride)] # Copy overrides to RAM for the listener
 
         # Create dictionary with channel objects instead of ids
         channel_overrides = {}
@@ -233,7 +233,7 @@ class Fun(commands.Cog):
             pass
 
         clone_settings = self.CLONE_OVERRIDES[msg.guild.id]
-        if not clone_settings[1].get(str(msg.channel.id)): return # Return if the channel is disabled via override
+        if not clone_settings[1].get(str(msg.channel.id),True): return # Return if the channel is disabled via override
         elif not str(msg.channel.id) in clone_settings[1].keys() and not clone_settings[0]: return # Return if no override for this channel exists and cloning is off
 
         webhook = await WEBHOOK_POOL.get(msg.channel) # Get a webhook for this channel

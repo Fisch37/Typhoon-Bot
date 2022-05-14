@@ -1123,6 +1123,7 @@ class Utility(commands.Cog):
 
     @reaction_role.command("add",brief="Adds a new reaction role to a message you define")
     async def reaction_role_add(self, ctx : commands.Context, message : str = None, emoji : str = None, role : discord.Role = None):
+        """FIX: When using the full-arg form any text can be added. This cannot be fixed easily and will require some redesigning."""
         justThis = lambda msg: msg.author == ctx.author and msg.channel == ctx.channel
 
         if message is not None:
@@ -1131,7 +1132,7 @@ class Utility(commands.Cog):
                 message_obj : discord.Message = await message_converter.convert(ctx,message)
                 pass
             except BadArgument:
-                await ctx.send("What is this? This doesn't look like a message! (Should loke like one of these:\n> <channel_id>:<message_id>\n> <message_id> [only if in same channel]\n> <message_url>\n)",ephemeral=True)
+                await ctx.send("What is this? This doesn't look like a message! (Should look like one of these:\n> <channel_id>:<message_id>\n> <message_id> [only if in same channel]\n> <message_url>\n)",ephemeral=True)
                 return
                 pass
             pass
@@ -1293,10 +1294,10 @@ class Utility(commands.Cog):
                         except BadArgument:
                             await ctx.send("""Your message does not seem to translate into a role or the bot would not be able to assign it. Make sure your message conforms to the following:
                             ```md
-                            1. A role ID
-                            2. A role mention
-                            3. A role name```
-                            if you are sure you have these correct, please check if this bot's role is above the role you are trying to assign""",ephemeral=True)
+                            \r1. A role ID
+                            \r2. A role mention
+                            \r3. A role name```
+                            \rif you are sure you have these correct, please check if this bot's role is above the role you are trying to assign""",ephemeral=True)
                             pass
                         else:
                             break
@@ -1445,7 +1446,13 @@ class Utility(commands.Cog):
                         if await utils.confirmation_interact(ctx,"Do you really want to delete this reaction role? (This operation is irreversible)","Delete"):
                             msg_rrs.pop(emoji)
                             await sql_write(msg_obj.id,emoji)
-                            await msg_obj.remove_reaction(emoji,ctx.me)
+                            try:
+                                await msg_obj.remove_reaction(emoji,ctx.me)
+                                pass
+                            except discord.errors.HTTPException:
+                                await ctx.send("I was unable to remove my reaction. This shouldn't cause any more issues though",ephemeral=True)
+                                pass
+
                             view.remove_item(button)
                             await origin_msg.edit(view=view)
                             pass
@@ -1454,7 +1461,7 @@ class Utility(commands.Cog):
                     return wrapper
                     pass
                 for emoji, role in msg_rrs.items():
-                    button = discord.ui.Button(label=role.name,emoji=emoji,row=0)
+                    button = discord.ui.Button(label=role.name,emoji=emoji if isinstance(emoji,discord.Emoji) else None,row=0)
                     button.callback = rr_callback_gen(button,emoji)
 
                     view.add_item(button)
@@ -1515,6 +1522,9 @@ class Utility(commands.Cog):
         message_id = payload.message_id
         emoji      = payload.emoji
         
+        guild = BOT.get_guild(payload.guild_id)
+        channel = guild.get_channel_or_thread(payload.channel_id)
+        
         try:
             reaction_roles = self.REACTION_ROLES[message_id]
             role = reaction_roles[(emoji)]
@@ -1524,12 +1534,24 @@ class Utility(commands.Cog):
             pass
         
         if payload.event_type == "REACTION_ADD":
-            await payload.member.add_roles(role,reason="Reaction Role Add") # Add the reaction role
+            try:
+                await payload.member.add_roles(role,reason="Reaction Role Add") # Add the reaction role
+                pass
+            except discord.errors.Forbidden:
+                logging.debug(f"No Role add permission for {payload.member.id} on {payload.member.guild.id}")
+                await channel.send(f"Oops! It seems I don't have permission to add roles to {payload.member.mention}. Make sure this bot's role is above any user role.")
+                pass
             pass
         else:
             guild = BOT.get_guild(payload.guild_id)
             member = await guild.fetch_member(payload.user_id)
-            await member.remove_roles(role,reason="Reaction Role Remove") # Remove the reaction role
+            try:
+                await member.remove_roles(role,reason="Reaction Role Remove") # Remove the reaction role
+                pass
+            except discord.errors.Forbidden:
+                logging.debug(f"No Role remove permission for {payload.member.id} on {payload.member.guild.id}")
+                await channel.send(f"Oops! It seems I don't have permission to remove roles from {payload.member.mention}. Make sure this bot's role is above any user role.")
+                pass
         pass
 
     @commands.Cog.listener("on_ready")
@@ -1633,7 +1655,7 @@ class Utility(commands.Cog):
         )
         pass
 
-    @commands.command("send_anon",brief="Send a message anonymously (noone will know who did it)")
+    @commands.command("send_anon",brief="Send a message anonymously (no one will know who did it)")
     async def send_anon(self, ctx : commands.Context, message : str):
         webhook = await WEBHOOK_POOL.get(ctx.channel,reason="/send_anon required Webhook") # Retrieve Webhook from pool
         
@@ -1660,7 +1682,7 @@ class Utility(commands.Cog):
     Becauuuuuuuse my IDE wouldn't show me what the scheduled_msg is made up of and only that it is one, which is not really helpful
     (in hindsight I was wrong about that, but I'm lazy and also I feel as soon as I touch my code it just falls apart)
     """
-    @tasks.loop(count=1) # Rapptz told me not to use on_ready
+    @tasks.loop(count=1) # Rapptz told me not to use on_ready (well, he told everyone)
     async def schedule_msg_collector(self):
         """Collects scheduled messages from the SQL Server
         Can be a little slow, just shouldn't cause much overhead on the server"""

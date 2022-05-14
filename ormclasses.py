@@ -45,7 +45,7 @@ class Guild(Base):
     xp_timeout              = sql.Column(mysql.SMALLINT(unsigned=True),                      nullable=False,default=60)
     level_state             = sql.Column(sql.Boolean,                                        nullable=False,default=False)
     level_channel           = sql.Column(sql.String(20),                                     nullable=True)
-    level_msg               = sql.Column(sql.String(200),                                    nullable=False,default="Geez, {user.mention}! You did it! You leveled up to level {level}!")
+    level_msg               = sql.Column(sql.String(200),                                    nullable=False,default="Geez, $user_mention! You did it! You leveled up to level $level!")
     pass
 
 class ReactionRoles(Base):

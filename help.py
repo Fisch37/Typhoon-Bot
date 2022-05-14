@@ -152,20 +152,26 @@ async def help(ctx : commands.Context, command_or_category : str = ""):
 
             loop = asyncio.get_event_loop()
             results = await loop.run_in_executor(None, searchCommands,searchMsg.content) # Search for all commands that match the filter given by the user
-
-            searchResp = "```md\n" # Set up result
-            for command in results:
-                if isinstance(command,commands.Group):
-                    searchResp = "".join((searchResp,help_from_group(command),"\n"))
+            
+            if len(results) > 0:
+                searchResp = "```md\n" # Set up result
+                for command in results:
+                    if isinstance(command,commands.Group):
+                        searchResp = "".join((searchResp,help_from_group(command),"\n"))
+                        pass
+                    else:
+                        searchResp = "".join((searchResp,f"+ {help_command_call_struct(command)}\n\t- {command.description if command.description != '' else command.brief}\n"))
+                        pass
                     pass
-                else:
-                    searchResp = "".join((searchResp,f"+ {help_command_call_struct(command)}\n\t- {command.description if command.description != '' else command.brief}\n"))
-                    pass
+                searchResp = "".join((searchResp,"```"))
+            else:
+                searchResp = "```\nThere's no command matching this filter```"
                 pass
-            searchResp = "".join((searchResp,"```"))
 
             button.disabled = False # Reenable search option
             select.disabled = False # Reenable cog selection
+            for option in select.options: option.default = False
+
             await message.edit(searchResp,view=self)
             pass
         pass

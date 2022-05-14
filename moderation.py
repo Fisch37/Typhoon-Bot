@@ -192,11 +192,11 @@ class ModConfig:
 
 @dataclasses.dataclass(frozen=True,order=True)
 class Warn:
-    guild  : discord.Guild
-    target : discord.Member
-    author : discord.Member
+    guild  : discord.Guild = dataclasses.field(compare=False)
+    target : discord.Member = dataclasses.field(compare=False)
+    author : discord.Member = dataclasses.field(compare=False)
     time : datetime = dataclasses.field(compare=True)
-    reason : str
+    reason : str = dataclasses.field(compare=False)
 
     def to_raw(self) -> tuple[int,int,float,str]:
         return self.target.id, self.author.id, self.time.timestamp(), self.reason
@@ -242,7 +242,7 @@ class Warn:
                 member_id = int(raw[0])
                 author_id = int(raw[1])
                 timestamp = float(raw[2])
-                reason = float(raw[3])
+                reason = raw[3]
 
                 converted.append(Warn.from_database(guild,member_id,author_id,timestamp,reason))
                 pass
@@ -250,8 +250,6 @@ class Warn:
         finally:
             await session.close()
             pass
-
-        converted.sort()
 
         return tuple(converted)
         pass
@@ -261,7 +259,12 @@ class Warn:
         session : asql.AsyncSession = SESSION_FACTORY()
         try:
             result : CursorResult = await session.execute(sql.select(GuildWarning).where(GuildWarning.guild_id == str(guild.id)))
-            sqlobj : GuildWarning = result.scalar_one()
+            sqlobj : GuildWarning = result.scalar_one_or_none()
+            if sqlobj is None:
+                sqlobj = GuildWarning(guild_id = str(guild.id))
+                session.add(sqlobj)
+                pass
+
             sqlobj.warns = [warn.to_raw() for warn in warnings]
             await session.commit()
             pass
@@ -651,7 +654,7 @@ class Moderation(commands.Cog):
         warnings = await Warn.database_load_all(guild)
 
         is_outdated = lambda warn: (warn.time.timestamp() - current_timestamp) > CONFIG.WARNING_ARCHIVE_TIME*60
-        new_warnings = [warn for warn in warnings if not is_outdated()]
+        new_warnings = [warn for warn in warnings if not is_outdated(warn)]
 
         await Warn.database_save_all(guild,new_warnings)
         pass
@@ -764,6 +767,10 @@ class Moderation(commands.Cog):
     @commands.guild_only()
     @utils.perm_message_check("You don't seem to have the right tools to lift these messages... (No Permission)",manage_messages=True)
     async def move_messages(self, ctx : commands.Context, channel : discord.TextChannel, messages : int = Option(description="The amount of messages to move. This is capped at 100")):
+        if channel == ctx.channel:
+            await ctx.send("Now that would be pretty silly... (Channel is same as current)",ephemeral=True)
+            return
+            pass
         messages = min(messages,CONFIG.MSG_MOVE_LIM)
 
         message_contents = [""]
@@ -1315,6 +1322,7 @@ def channel_diff_description(before : Channel, after : Channel) -> str:
     
     if isinstance(before,discord.TextChannel): # Text channel exclusive changes
         if before.slowmode_delay != after.slowmode_delay: lines.append(f"Slowmode: {utils.stringFromDuration(before.slowmode_delay)} -> {utils.stringFromDuration(after.slowmode_delay)}")
+        if before.default_auto_archive_duration != after.default_auto_archive_duration: lines.append(f"Thread Auto Archive Duration: {utils.stringFromDuration(before.default_auto_archive_duration*60)} -> {utils.stringFromDuration(after.default_auto_archive_duration*60)}")
         if before.nsfw != after.nsfw: lines.append(f"NSFW: {'Enabled' if before.nsfw else 'Disabled'} -> {'Enabled' if after.nsfw else 'Disabled'}")
         pass
     elif isinstance(before,discord.VoiceChannel): # Voice channel exclusive changes
@@ -1641,6 +1649,7 @@ async def handle_event(event : Event):
             pass
         elif event.type == Event.MEMBER_LEAVE:
             member : discord.Member = event.data["member"]
+            if member == member.guild.me: return # This fixes a race condition where the bot would sometimes try and report itself leaving
             
             type_str = "Member Left"
             extra_description = f"{member.name}{member.discriminator} left the server"
