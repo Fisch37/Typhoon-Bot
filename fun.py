@@ -29,21 +29,21 @@ class Fun(commands.Cog):
     @commands.guild_only()
     async def clone(self, ctx : commands.Context, state : bool):
         session : asql.AsyncSession = SESSION_FACTORY()
-        result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id==str(ctx.guild.id)))
-        
-        guildObj : Guild = result.scalar_one_or_none()
-        if guildObj is None: # If there is no data, there is no cloning
-            isEnabled = False
-        else:
-            isEnabled = guildObj.clone_enabled
-            try:
-                isEnabled = guildObj.clone_filter[str(ctx.channel.id)]
-            except KeyError:
+        try:
+            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id==str(ctx.guild.id)))
+            
+            guildObj : Guild = result.scalar_one_or_none()
+            if guildObj is None: # If there is no data, there is no cloning
+                isEnabled = False
+            else:
+                isEnabled = guildObj.clone_enabled
+                try:
+                    isEnabled = guildObj.clone_filter[str(ctx.channel.id)]
+                except KeyError:
+                    pass
                 pass
-            pass
-
-
-        await session.rollback(); await session.close() # Close session
+        finally:
+            await session.close() # Close session
 
         if not isEnabled: # If cloning is not enabled, don't allow this command
             await ctx.send("Awwww... The machines are down... Maybe talk to the administrators if they could enable cloning, as it is disabled at the moment.",ephemeral=True)
@@ -77,17 +77,18 @@ class Fun(commands.Cog):
             pass
 
         session : asql.AsyncSession = SESSION_FACTORY()
+        try:
+            result = await session.execute(sql.select(Guild).where(Guild.id == str(ctx.guild.id))) # Get the guild obj
+            sqlGuild = result.scalar_one_or_none() # Actually assemble the Guild Obj from the row
+            if sqlGuild is None: # Create new sql Guild Obj if it doesn't exist 
+                sqlGuild = Guild(id=str(ctx.guild.id))
+                session.add(sqlGuild) # Add Guild Obj to database
+                pass
+            sqlGuild.clone_enabled = state # Update state
 
-        result = await session.execute(sql.select(Guild).where(Guild.id == str(ctx.guild.id))) # Get the guild obj
-        sqlGuild = result.scalar_one_or_none() # Actually assemble the Guild Obj from the row
-        if sqlGuild is None: # Create new sql Guild Obj if it doesn't exist 
-            sqlGuild = Guild(id=str(ctx.guild.id))
-            session.add(sqlGuild) # Add Guild Obj to database
-            pass
-        sqlGuild.clone_enabled = state # Update state
-
-        await session.commit() # Commit & close
-        await session.close()
+            await session.commit() # Commit & close
+        finally:
+            await session.close()
 
         if state:
             await ctx.send("So, cloning, eh? Interesting field of science... _Alright, start the machines! We trained this; come on!_",ephemeral=True)
@@ -104,21 +105,22 @@ class Fun(commands.Cog):
     @utils.perm_message_check("Sorry, but this action is only for the lab administrators (i.e. No Permission [need Manage Channel])\nhttps://tenor.com/view/no-i-dont-think-i-will-captain-america-old-capt-gif-17162888",manage_channels=True)
     async def set_clone_filter(self, ctx : commands.Context, state : bool = Option(description="Whether cloning should be enabled or disabled in this channel")):
         session : asql.AsyncSession = SESSION_FACTORY()
+        try:
+            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(ctx.guild.id))) # Get the current guild from the SQL Table
+            sqlGuild = result.scalar_one_or_none() # Retrieve the Guild object (or None if it doesn't exist)
+            if sqlGuild is None: # Create a new entry if there is none at the moment
+                sqlGuild = Guild(id=str(ctx.guild.id))
+                session.add(sqlGuild)
+                pass
 
-        result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(ctx.guild.id))) # Get the current guild from the SQL Table
-        sqlGuild = result.scalar_one_or_none() # Retrieve the Guild object (or None if it doesn't exist)
-        if sqlGuild is None: # Create a new entry if there is none at the moment
-            sqlGuild = Guild(id=str(ctx.guild.id))
-            session.add(sqlGuild)
-            pass
+            sqlGuild.clone_filter[str(ctx.channel.id)] = state # Update the filter for that specific channel
 
-        sqlGuild.clone_filter[str(ctx.channel.id)] = state # Update the filter for that specific channel
+            self.CLONE_OVERRIDES.setdefault(ctx.guild.id,[None,None])
+            self.CLONE_OVERRIDES[ctx.guild.id][1] = dict(sqlGuild.clone_filter) # Save overrides in RAM
 
-        self.CLONE_OVERRIDES.setdefault(ctx.guild.id,[None,None])
-        self.CLONE_OVERRIDES[ctx.guild.id][1] = dict(sqlGuild.clone_filter) # Save overrides in RAM
-
-        await session.commit()
-        await session.close()
+            await session.commit()
+        finally:
+            await session.close()
 
         await ctx.send(f"Well, this will get a little more complicated. Anyway, regardless of the original setting, you now {'''can''' if state else '''can't'''} use the clone system in this channel.",ephemeral=True)
         pass
@@ -129,29 +131,31 @@ class Fun(commands.Cog):
     async def rem_clone_filter(self, ctx : commands.Context):
         session : asql.AsyncSession = SESSION_FACTORY()
 
-        result : CursorResult = await session.execute(sql.select(Guild.clone_filter).where(Guild.id == str(ctx.guild.id)))
-        clone_filter : dict = result.scalar_one_or_none()
-
-        if clone_filter is None: # Add new guild obj if it doesn't exist yet
-            sqlGuild = Guild(id=str(ctx.guild.id))
-            session.add(sqlGuild)
-            clone_filter = sqlGuild.clone_filter
-            pass
-
         try:
-            clone_filter.pop(str(ctx.channel.id)) # Remove the channel override
-        except KeyError:
-            await ctx.send("As there is no actual override for this channel, nothing was changed. I admire your engagement, though!",ephemeral=True)
-            pass
-        else:
-            await ctx.send("The override was removed. This channel will now conform to the regular settings.")
-            pass
+            result : CursorResult = await session.execute(sql.select(Guild.clone_filter).where(Guild.id == str(ctx.guild.id)))
+            clone_filter : dict = result.scalar_one_or_none()
 
-        self.CLONE_OVERRIDES.setdefault(ctx.guild.id,[None,None])
-        self.CLONE_OVERRIDES[ctx.guild.id][1] = dict(clone_filter) # Save overrides in RAM
-        
-        await session.commit() # Commit & Close
-        await session.close()
+            if clone_filter is None: # Add new guild obj if it doesn't exist yet
+                sqlGuild = Guild(id=str(ctx.guild.id))
+                session.add(sqlGuild)
+                clone_filter = sqlGuild.clone_filter
+                pass
+
+            try:
+                clone_filter.pop(str(ctx.channel.id)) # Remove the channel override
+            except KeyError:
+                await ctx.send("As there is no actual override for this channel, nothing was changed. I admire your engagement, though!",ephemeral=True)
+                pass
+            else:
+                await ctx.send("The override was removed. This channel will now conform to the regular settings.", ephemeral=True)
+                pass
+
+            self.CLONE_OVERRIDES.setdefault(ctx.guild.id,[None,None])
+            self.CLONE_OVERRIDES[ctx.guild.id][1] = dict(clone_filter) # Save overrides in RAM
+            
+            await session.commit() # Commit & Close
+        finally:
+            await session.close()
         pass
 
     @manage_clones_filter.command("show",brief="List all the clone overrides on this server")
@@ -159,7 +163,11 @@ class Fun(commands.Cog):
     @utils.perm_message_check("Oi! This data's classified! (No Permission [need Manage Channel])",manage_channels=True)
     async def show_clone_filter(self, ctx : commands.Context):
         session : asql.AsyncSession = SESSION_FACTORY()
-        filterResult : CursorResult = await session.execute(sql.select(Guild.clone_filter).where(Guild.id == str(ctx.guild.id))) # Get all channel overrides
+        try:
+            filterResult : CursorResult = await session.execute(sql.select(Guild.clone_filter).where(Guild.id == str(ctx.guild.id))) # Get all channel overrides
+            isEnabled : Optional[bool] = (await session.execute(sql.select(Guild.clone_enabled).where(Guild.id == str(ctx.guild.id)))).scalar_one_or_none() # Get if cloning is currently enabled
+        finally:
+            await session.close()
         
         cloneOverride : dict = filterResult.scalar_one_or_none() # Assemble channel overrides into a dict
         if cloneOverride is None:
@@ -167,9 +175,7 @@ class Fun(commands.Cog):
             pass
         del filterResult
         
-        isEnabled : Optional[bool] = (await session.execute(sql.select(Guild.clone_enabled).where(Guild.id == str(ctx.guild.id)))).scalar_one_or_none() # Get if cloning is currently enabled
-        
-        self.CLONE_OVERRIDES[ctx.guild.id] = (bool(isEnabled),dict(cloneOverride)) # Copy overrides to RAM for the listener
+        self.CLONE_OVERRIDES[ctx.guild.id] = [bool(isEnabled),dict(cloneOverride)] # Copy overrides to RAM for the listener
 
         # Create dictionary with channel objects instead of ids
         channel_overrides = {}
@@ -183,7 +189,6 @@ class Fun(commands.Cog):
             ordered_channel_overrides[channel] = channel_overrides[channel]
             pass
         del channel_overrides, cloneOverride
-        await session.close()
 
         embed = discord.Embed(colour=ctx.author.colour,title="Clone Channel Override")
         embed.description=f"Non-override cloning is {'Enabled' if isEnabled else 'Disabled'}"
@@ -206,26 +211,29 @@ class Fun(commands.Cog):
         self.CLONE_OVERRIDES.setdefault(msg.guild.id,[None,None])
         if self.CLONE_OVERRIDES[msg.guild.id][0] is None:
             session : asql.AsyncSession = SESSION_FACTORY()
-            result : CursorResult = await session.execute(sql.select(Guild.clone_enabled).where(Guild.id == str(msg.guild.id)))
-            self.CLONE_OVERRIDES[msg.guild.id][0] = bool(result.scalar_one_or_none()) # Save clone_enabled in RAM (False if not in database)
-
-            await session.close()
+            try:
+                result : CursorResult = await session.execute(sql.select(Guild.clone_enabled).where(Guild.id == str(msg.guild.id)))
+                self.CLONE_OVERRIDES[msg.guild.id][0] = bool(result.scalar_one_or_none()) # Save clone_enabled in RAM (False if not in database)
+            finally:
+                await session.close()
             pass
 
         if self.CLONE_OVERRIDES[msg.guild.id][1] is None:
             session : asql.AsyncSession = SESSION_FACTORY()
-            result : CursorResult = await session.execute(sql.select(Guild.clone_filter).where(Guild.id == str(msg.guild.id)))
             try:
-                self.CLONE_OVERRIDES[msg.guild.id][1] = dict(result.scalar_one()) # Retrieve overrides
-                pass
-            except KeyError:
-                self.CLONE_OVERRIDES[msg.guild.id][1] = {} # Set overrides to an empty dict if not in SQL table
-                pass
-            await session.close() # Close session because that is neccessary
+                result : CursorResult = await session.execute(sql.select(Guild.clone_filter).where(Guild.id == str(msg.guild.id)))
+                try:
+                    self.CLONE_OVERRIDES[msg.guild.id][1] = dict(result.scalar_one()) # Retrieve overrides
+                    pass
+                except KeyError:
+                    self.CLONE_OVERRIDES[msg.guild.id][1] = {} # Set overrides to an empty dict if not in SQL table
+                    pass
+            finally:
+                await session.close() # Close session because that is neccessary
             pass
 
         clone_settings = self.CLONE_OVERRIDES[msg.guild.id]
-        if not clone_settings[1].get(str(msg.channel.id)): return # Return if the channel is disabled via override
+        if not clone_settings[1].get(str(msg.channel.id),True): return # Return if the channel is disabled via override
         elif not str(msg.channel.id) in clone_settings[1].keys() and not clone_settings[0]: return # Return if no override for this channel exists and cloning is off
 
         webhook = await WEBHOOK_POOL.get(msg.channel) # Get a webhook for this channel
@@ -388,6 +396,8 @@ def setup(bot : commands.Bot):
     ENGINE          = bot.ENGINE
     SESSION_FACTORY = bot.SESSION_FACTORY
     # The rest
+    bot.DATA.CLONE_OVERRIDES= Fun.CLONE_OVERRIDES
+
     bot.add_cog(Fun())
 
     with open(CONFIG.PATPAT_COLLECTION) as file:

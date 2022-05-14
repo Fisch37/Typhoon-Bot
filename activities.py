@@ -1,6 +1,6 @@
 import discord
 
-ACTIVITIES = {
+ACTIVITIES = (
     discord.Activity(type=discord.ActivityType.playing,name="guess who gets the next command against MelonBot#5023\n(Please let me win :3)"),
     discord.Activity(type=discord.ActivityType.watching,name="the cosmic microwave background radiation for alien messages"),
     discord.Activity(type=discord.ActivityType.listening,name="%help"),
@@ -10,4 +10,4 @@ ACTIVITIES = {
     discord.Activity(type=discord.ActivityType.watching,name="Ultrons baby steps"),
     discord.Activity(type=discord.ActivityType.listening,name="{servers} servers!"),
     discord.Activity(type=discord.ActivityType.listening,name="you for {uptimeH} hours and {uptimeM} minutes")
-}
+)

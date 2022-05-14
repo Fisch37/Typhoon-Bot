@@ -22,6 +22,9 @@ BOT : commands.Bot = ...
 
 INVITE_LINK = "https://discord.com/oauth2/authorize?client_id=897055320646492231&scope=bot%20applications.commands&permissions=8"
 
+class DataStorage:
+    pass
+
 def setCustomLogger(level = logging.INFO):
     if not os.path.exists('logs'):
         os.mkdir("logs")
@@ -95,6 +98,7 @@ def main():
     logging.info("Launching")
 
     BOT.WEBHOOK_POOL = utils.WebhookPool(BOT)
+    BOT.DATA = DataStorage()
 
     @BOT.listen("on_ready")
     async def on_ready():
@@ -116,24 +120,24 @@ def main():
     @BOT.listen("on_guild_join")
     async def sql_creator(guild : discord.Guild):
         session : asql.AsyncSession = SESSION_FACTORY()
-
-        result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(guild.id)))
-        if result.first() is not None:
+        try:
+            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(guild.id)))
+            if result.first() is None:
+                session.add(Guild(id=str(guild.id)))
+                await session.commit()
+                pass
+        finally:
             await session.close()
-            return
-            pass
-
-        session.add(Guild(id=str(guild.id)))
-
-        await session.commit(); await session.close()
         pass
 
     @BOT.listen("on_guild_remove")
     async def sql_deleter(guild : discord.Guild):
         session : asql.AsyncSession = SESSION_FACTORY()
-
-        await session.execute(sql.delete(Guild).where(Guild.id == str(guild.id)))
-        await session.commit(); await session.close()
+        try:
+            await session.execute(sql.delete(Guild).where(Guild.id == str(guild.id)))
+            await session.commit()
+        finally:
+            await session.close()
         pass
 
     @BOT.listen("on_command_error")

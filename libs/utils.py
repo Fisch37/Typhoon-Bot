@@ -1,9 +1,12 @@
 import logging, os, asyncio
+import threading
 from typing import *
 from datetime import datetime
 
 from discord.ext import commands
 import discord
+
+from ormclasses import *
 
 def first(sequence : Sequence[Any], matcher : Callable) -> Any:
     for element in sequence:
@@ -218,4 +221,85 @@ class WebhookPool:
     def clear(self):
         self.pool.clear()
         pass
+    pass
+
+async def get_guild(session : asql.AsyncSession, guild_id : int) -> Guild:
+    result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(guild_id)))
+    sql_guild = result.scalar_one_or_none()
+    if sql_guild is None:
+        sql_guild = Guild(id=str(guild_id))
+        session.add(sql_guild)
+        pass
+
+    return sql_guild
+    pass
+
+def generate_snowflake(*,__inc__ = [0]): # __inc__ is a list because that means it will be stored across execution
+    """Generates a snowflake according to https://discord.com/developers/docs/reference#snowflakes"""
+    if not isinstance(__inc__[0],int): raise TypeError("Cached increment is not a string. You probably set it as something else. Don't")
+
+    raw_binary = lambda n: bin(n)[2:] # Does not include 0b prefix
+
+    # Get Unix Epoch
+    utc_time = datetime.utcnow()
+    unix_millis = utc_time.timestamp()*1000
+    
+    discord_epoch = unix_millis - 1420070400000 # Discord Epoch is counting first second since 2015
+    internal_process_id = 31 # Setting to 31 because it is not possible according to Discord's docs, meaning this will not occur as a snowflake from discord
+    internal_worker_id  = 31 # Same as above
+
+    snowflake = eval("0b" + raw_binary(discord_epoch) + raw_binary(internal_process_id) + raw_binary(internal_worker_id) + raw_binary(__inc__[0]))
+    # This uses eval and is therefore a potential issue. But, the only possible input is __inc__[0] which can only be an integer
+
+    __inc__[0] += 1
+    __inc__[0] %= 2**12
+
+    return snowflake
+    pass
+
+class ValueErrorConverter(commands.Converter):
+    async def convert(self, ctx: commands.Context, argument: str) -> int:
+        try:
+            return self._CONVERTER(argument)
+        except ValueError:
+            raise commands.BadArgument("argument is not a valid integer")
+            pass
+        pass
+    pass
+
+class IntConverter(ValueErrorConverter):
+    _CONVERTER = int
+    pass
+
+class FloatConverter(ValueErrorConverter):
+    _CONVERTER = float
+    pass
+
+async def wait_for_convert(bot : commands.Bot, ctx : commands.Context, converter : commands.Converter, error_prompt : str = "Passed argument could not be converted", check = lambda val: True, timeout : float = None) -> Optional[Any]:
+    while True:
+        resp_msg : discord.Message = await bot.wait_for("message",check=lambda msg: msg.author == ctx.author and msg.channel == ctx.channel,timeout=timeout)
+        try:
+            obj = await converter.convert(ctx,resp_msg.content)
+        except commands.CommandError:
+            await ctx.send(error_prompt,ephemeral=True)
+            pass
+        else:
+            if not check(obj): 
+                await ctx.send(error_prompt,ephemeral=True)
+                continue
+            break
+        finally:
+            await resp_msg.delete()
+            pass
+        pass
+
+    return obj
+    pass
+
+async def wait_for_role(bot : commands.Bot, ctx : commands.Context, error_prompt : str = "Passed argument was not a role", check = lambda msg: True,timeout : float = None) -> Optional[discord.Role]:
+    return await wait_for_convert(bot,ctx,commands.RoleConverter(),error_prompt,check,timeout)
+    pass
+
+async def wait_for_text_channel(bot : commands.Bot, ctx : commands.Context, error_prompt : str = "Passed argument was not a text channel", timeout : float = None, check = lambda msg: True) -> Optional[discord.TextChannel]:
+    return await wait_for_convert(bot,ctx,commands.TextChannelConverter(),error_prompt,check,timeout)
     pass
