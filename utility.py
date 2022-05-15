@@ -160,7 +160,7 @@ class VoteView(discord.ui.View):
         resultString = ""
         if total_votes > 0:
             for i in range(len(self.options)):
-                resultString = "".join((resultString,self.options[i],": ", str(vote_count[i]),"votes (",str(round(vote_count[i]/total_votes,2)),"%)\n\t"))
+                resultString = "".join((resultString,self.options[i][0],": ", str(vote_count[i]),"votes (",str(round(vote_count[i]/total_votes,2)),"%)\n\t"))
                 pass
             pass
         else:
@@ -462,7 +462,7 @@ class Utility(commands.Cog):
                 utils.set_component_state_recursive(self,True)
                 pass
 
-            async def interaction_check(self, item, interaction: discord.Interaction) -> bool:
+            async def interaction_check(self, interaction: discord.Interaction) -> bool:
                 return interaction.user == ctx.author
                 pass
 
@@ -557,7 +557,7 @@ class Utility(commands.Cog):
                                 pass
                             pass
 
-                        async def interaction_check(self, item, interaction: discord.Interaction) -> bool:
+                        async def interaction_check(self, interaction: discord.Interaction) -> bool:
                             return interaction.user == ctx.author
                             pass
 
@@ -799,7 +799,7 @@ class Utility(commands.Cog):
                 super().__init__(timeout=CONFIG.EDIT_TIMEOUT)
                 pass
 
-            async def interaction_check(view, item, interaction: discord.Interaction) -> bool: # Only allow interaction from the author
+            async def interaction_check(view, interaction: discord.Interaction) -> bool: # Only allow interaction from the author
                 return interaction.user == ctx.author
             
             async def on_timeout(view) -> None:

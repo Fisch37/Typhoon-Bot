@@ -236,13 +236,13 @@ async def get_guild(session : asql.AsyncSession, guild_id : int) -> Guild:
 
 def generate_snowflake(*,__inc__ = [0]): # __inc__ is a list because that means it will be stored across execution
     """Generates a snowflake according to https://discord.com/developers/docs/reference#snowflakes"""
-    if not isinstance(__inc__[0],int): raise TypeError("Cached increment is not a string. You probably set it as something else. Don't")
+    if not isinstance(__inc__[0],int): raise TypeError("Cached increment is not an integer. You probably set it as something else. Don't")
 
     raw_binary = lambda n: bin(n)[2:] # Does not include 0b prefix
 
     # Get Unix Epoch
     utc_time = datetime.utcnow()
-    unix_millis = utc_time.timestamp()*1000
+    unix_millis = int(utc_time.timestamp()*1000)
     
     discord_epoch = unix_millis - 1420070400000 # Discord Epoch is counting first second since 2015
     internal_process_id = 31 # Setting to 31 because it is not possible according to Discord's docs, meaning this will not occur as a snowflake from discord
