@@ -1,6 +1,10 @@
 """
-Configuration! That's all
+Configuration!
+You will find a lot of `update` and `on_interaction` functions.
+This module heavily uses libs.config_base, which should be seen as a part of this extension.
+Here only the ConfigBranch and ConfigElement objects are created as well as the config command, which loads the topmost branch.
 """
+# Yeah, that's a lot of imports
 from leveling import LevelSettings, RewardRoles
 from libs import utils, config
 from libs.config_base import branch_factory, element_factory, ConfigElement, ConfigButton, ConfigSelect, CONFIG_TIMEOUT
@@ -19,6 +23,7 @@ import sqlalchemy as sql, sqlalchemy.ext.asyncio as asql
 from moderation import AutomodState, ModConfig
 from ormclasses import *
 # Declare constants
+# These will be redefined in the load function at the bottom
 CONFIG : config.Config = ...
 
 BOT : commands.Bot = ...
@@ -30,11 +35,13 @@ SESSION_FACTORY : orm.sessionmaker = ...
 #####################################################
 
 async def send_ephemeral(interaction, content): await interaction.followup.send(content,ephemeral=True)
-
+"""This is a short-hand for something that will be used a lot later"""
+    
 async def EMPTY_UPDATE(self): ...
 
-#
+# Moderation
 async def update(self : ConfigElement):
+    # This will always add a list of all current god roles to the embed
     guild = self.ctx.guild
     
     god_role_ids = BOT.DATA.GOD_ROLES[self.ctx.guild.id]
@@ -45,8 +52,10 @@ async def update(self : ConfigElement):
     pass
 
 async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
+    # Get all the current god roles from RAM
     BOT.DATA.GOD_ROLES.setdefault(self.ctx.guild.id,set())
     god_roles = BOT.DATA.GOD_ROLES[self.ctx.guild.id]
+    
     if isinstance(element,discord.ui.Button):
         if element.label == "Add":
             await send_ephemeral(interaction,"Please reply with a role you wish to add as a God Role")
