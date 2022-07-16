@@ -25,6 +25,27 @@ INVITE_LINK = "https://discord.com/oauth2/authorize?client_id=897055320646492231
 class DataStorage:
     pass
 
+class Bot(commands.Bot):
+    __slots__= "working_guilds", 
+    def __init__(self, *args,guild_ids= None, **kwargs):
+        super().__init__(*args,**kwargs)
+
+        if guild_ids is not None:
+            self.working_guilds= [discord.Object(id=gid) for gid in guild_ids]
+            pass
+        pass
+
+    async def setup_hook(self) -> None:
+        if self.working_guilds is not None:
+            for guild in self.working_guilds:
+                self.tree.copy_global_to(guild=guild)
+                pass
+
+            await self.tree.sync()
+            pass
+        pass
+    pass
+
 def setCustomLogger(level = logging.INFO):
     if not os.path.exists('logs'):
         os.mkdir("logs")
@@ -39,7 +60,7 @@ def setCustomLogger(level = logging.INFO):
     logging.getLogger().addHandler(stdoutLogger)
     pass
 
-def main():
+async def main():
     global CONFIG
     global ENGINE, SESSION_FACTORY
     global TOKEN, BOT
@@ -59,30 +80,15 @@ def main():
     
     ENGINE = asql.create_async_engine(CONFIG.DB_URL[1:-1],echo=False)
 
-    async def async_metacreate(): # Create all tables to make sure that they actually... exist
-        async with ENGINE.begin() as conn:
-            conn : asql.AsyncConnection
-            await conn.run_sync(Base.metadata.create_all)
-            pass
-        pass
-
     # Create bot instance
     logging.info("Creating bot application")
-    intents = discord.Intents(
-        guild_reactions=True,
-        guild_messages=True,
-        messages=True,
-        guilds=True,
-        members=True,
-        bans=True,
-        webhooks=True,
-        reactions=True,
-        invites=True,
-        emojis_and_stickers=True
-    )
+    intents = discord.Intents(3180143)
+    """This is the following configuration:
+    GUILDS, GUILD_MEMBERS, GUILD_BANS, GUILD_EMOJIS_AND_STICKERS, GUILD_WEBHOOKS, GUILD_INVITES, GUILD_MESSAGES, \
+        GUILD_MESSAGE_REACTIONS, MESSAGE_CONTENT,AUTO_MODERATION_CONFIGURATION, AUTO_MODERATION_EXECUTION"""
     if TESTING_MODE: guild_ids = (734461254747553823,)
     else: guild_ids = tuple()
-    BOT = commands.Bot("/",help_command=None,intents=intents,message_commands=True,slash_commands=True,slash_commands_guild=guild_ids,loop=loop,enable_debug_events=True)
+    BOT = Bot("/",help_command=None,intents=intents,guild_ids=guild_ids,loop=loop,enable_debug_events=True)
     BOT.tasks = set()
 
     BOT.ENGINE = ENGINE
@@ -90,7 +96,11 @@ def main():
     BOT.IS_TESTING = TESTING_MODE
 
     # Initialise ORM
-    loop.run_until_complete(async_metacreate())
+    async with ENGINE.begin() as conn: # Create all tables to make sure that they actually... exist
+        conn : asql.AsyncConnection
+        await conn.run_sync(Base.metadata.create_all)
+        pass
+
     SESSION_FACTORY = orm.sessionmaker(ENGINE,class_=asql.AsyncSession,expire_on_commit=False)
     BOT.SESSION_FACTORY = SESSION_FACTORY
 
@@ -157,18 +167,25 @@ def main():
             pass
         pass
 
-    BOT.load_extension("fun")
-    BOT.load_extension("utility")
-    BOT.load_extension("moderation")
-    BOT.load_extension("leveling")
-    
-    BOT.load_extension("help_ext")
-    BOT.load_extension("config")
+    await asyncio.gather(
+        # BOT.load_extension("fun"),
+        # BOT.load_extension("utility"),
+        # BOT.load_extension("moderation"),
+        # BOT.load_extension("leveling"),
+        
+        BOT.load_extension("help_ext"),
+        # BOT.load_extension("config"),
+    )
 
-    BOT.run(TOKEN)
-    asyncio.run(ENGINE.dispose())
+    try:
+        async with BOT:
+            await BOT.start(TOKEN)
+            pass
+    finally: 
+        await ENGINE.dispose()
+        pass
     pass
 
 if __name__=="__main__":
-    main()
+    asyncio.run(main())
     pass

@@ -473,7 +473,7 @@ class Leveling(commands.Cog):
     pass
 
 
-def setup(bot : commands.Bot):
+async def setup(bot : commands.Bot):
     global CONFIG, WEBHOOK_POOL
     global BOT, COG
     global SESSION_FACTORY, ENGINE
@@ -493,5 +493,5 @@ def setup(bot : commands.Bot):
     logging.info("Loaded Leveling extension!")
     pass
 
-def teardown(bot : commands.Bot):
+async def teardown(bot : commands.Bot):
     pass

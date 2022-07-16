@@ -385,7 +385,7 @@ class Fun(commands.Cog):
     pass
 
 
-def setup(bot : commands.Bot):
+async def setup(bot : commands.Bot):
     global CONFIG
     global BOT, WEBHOOK_POOL
     global ENGINE, SESSION_FACTORY
@@ -410,6 +410,6 @@ def setup(bot : commands.Bot):
     logging.info("Added fun extension")
     pass
 
-def teardown(bot : commands.Bot):
+async def teardown(bot : commands.Bot):
     bot.remove_cog("Fun")
     pass

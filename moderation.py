@@ -1096,7 +1096,7 @@ class Moderation(commands.Cog):
     pass
 
 # Setup & Teardown
-def setup(bot : commands.Bot):
+async def setup(bot : commands.Bot):
     global CONFIG
     global BOT, WEBHOOK_POOL, COG
     global ENGINE, SESSION_FACTORY
@@ -1122,7 +1122,7 @@ def setup(bot : commands.Bot):
     logging.info("Added moderation extension")
     pass
 
-def teardown(bot : commands.Bot):
+async def teardown(bot : commands.Bot):
     bot.remove_cog("Moderation")
     pass
 

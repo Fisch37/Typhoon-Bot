@@ -21,12 +21,12 @@ def split_help(content : str) -> tuple[str]:
     return tuple(messages)
     pass
 
-def help_command_call_struct(command : commands.Command) -> str:
-    params = command.clean_params # Command parameters
+def help_command_call_struct(command : discord.app_commands.Command) -> str:
+    params = [(raw_para["name"], command._params[raw_para["name"]]) for raw_para in command.to_dict()["options"]] # _ means I shouldn't do this... Too bad!
     paramstring = ""
-    for name, parameter in params.items():
+    for name, parameter in params:
         onestring = "".join(("<",name,">"))
-        if parameter.default is not parameter.empty:
+        if parameter.default is not None:
             onestring = "".join(("[",onestring,"]"))
             pass
 
@@ -93,14 +93,14 @@ def whole_help() -> str:
         all_cogs_resp = "\n".join((all_cogs_resp,cog_resp))
         pass
 
-    no_cog_commands = BOT.commands.difference(cog_commands)
+    no_cog_commands = set(BOT.tree.get_commands()).difference(cog_commands)
     no_cogs_resp = "# No category\n"
     for command in no_cog_commands:
         if isinstance(command,commands.Group):
             no_cogs_resp = "".join((cog_resp,help_from_group(command)))
             pass
         else:
-            no_cogs_resp = "".join((no_cogs_resp,f"+ {help_command_call_struct(command)}\n\t- {command.brief}"))
+            no_cogs_resp = "".join((no_cogs_resp,f"+ {help_command_call_struct(command)}\n\t- {command.description}"))
             pass
         pass
 
@@ -108,10 +108,12 @@ def whole_help() -> str:
     pass
 
 def searchCommands(matcher : str) -> set[commands.Command]:
-    return set(filter(lambda command: utils.stringFilter(command.name,matcher),BOT.commands))
+    return set(filter(lambda command: utils.stringFilter(command.name,matcher),BOT.tree.get_commands()))
     pass
 
-async def help(ctx : commands.Context, command_or_category : str = ""):
+async def help(interaction : discord.Interaction, command_or_category : str = ""):
+    await interaction.response.defer(ephemeral=True,thinking=True)
+
     message : discord.WebhookMessage = ...
 
     class HelpView(discord.ui.View):
@@ -120,34 +122,34 @@ async def help(ctx : commands.Context, command_or_category : str = ""):
             options=[discord.SelectOption(label=name,description=cog.description,value=name,default=(command_or_category.strip().lower()==name.lower())) for name, cog in BOT.cogs.items()] + [discord.SelectOption(label="All",value="__everything__",description="List help for every category (Note: This will send new messages)")],
             row=0
         )
-        async def cog_select(self : discord.ui.View,select : discord.ui.Select, interaction : discord.Interaction):
-            selected_cog = interaction.data.get("values")[0] # Get name of selected cog from interaction
+        async def cog_select(self : discord.ui.View,vinteraction : discord.Interaction, select : discord.ui.Select):
+            await vinteraction.response.defer(ephemeral=True,thinking=True)
+            
+            selected_cog = vinteraction.data.get("values")[0] # Get name of selected cog from interaction
 
             for option in select.options: option.default = False # Reset all defaults, in order to select a new one
             option = utils.selectOptionByValue(select,selected_cog) # Get selected option
             option.default = True # Set the (already selected) option as default so that it will appear in the menu
             if selected_cog == "__everything__":
-                await message.edit("New messages should pop up any second now...",view=self)
-                for content in split_help(whole_help()): await ctx.send(content,ephemeral=True)
-
-                #await message.edit(whole_help(),view=self) # Edit help message to show the help for every cog
+                await message.edit(content="New messages should pop up any second now...",view=self)
+                for content in split_help(whole_help()): await vinteraction.followup.send(content,ephemeral=True)
                 pass
             else:
                 cog = BOT.get_cog(selected_cog)
-                await message.edit(help_from_cog(cog),view=self) # Edit the help message to apply to the new selected cog
+                await message.edit(content=help_from_cog(cog),view=self) # Edit the help message to apply to the new selected cog
                 pass
             pass
 
         @discord.ui.button(label="Search for command",style=discord.ButtonStyle.primary,row=1)
-        async def search_for_command(self : discord.ui.View, button : discord.ui.Button, interaction : discord.Interaction):
+        async def search_for_command(self : discord.ui.View, vinteraction : discord.Interaction, button : discord.ui.Button):
             select : discord.ui.Select = self.children[0] # Get select menu from message components
             button.disabled = True # Disable button
             select.disabled = True # Disable select menu
 
-            await message.edit("```\nPlease type in a command search (send a message)\nUse ? as a one character wildcard\nand * as a multi character wildcard```",view=self)
-            await interaction.response.defer()
+            await message.edit(content="```\nPlease type in a command search (send a message)\nUse ? as a one character wildcard\nand * as a multi character wildcard```",view=self)
+            await vinteraction.response.defer()
 
-            searchMsg : discord.Message = await BOT.wait_for("message",check=lambda msg: msg.author == ctx.author and msg.channel == ctx.channel) # Wait for a reply from the user
+            searchMsg : discord.Message = await BOT.wait_for("message",check=lambda msg: msg.author.id == interaction.user.id and msg.channel == interaction.channel) # Wait for a reply from the user
             await searchMsg.delete() # Delete the reply to prevent the help command from getting thrown to high up
 
             loop = asyncio.get_event_loop()
@@ -172,7 +174,7 @@ async def help(ctx : commands.Context, command_or_category : str = ""):
             select.disabled = False # Reenable cog selection
             for option in select.options: option.default = False
 
-            await message.edit(searchResp,view=self)
+            await message.edit(content=searchResp,view=self)
             pass
         pass
 
@@ -202,18 +204,18 @@ async def help(ctx : commands.Context, command_or_category : str = ""):
     else:
         msg_content = "```\nPlease select from the menu below```"
 
-    message : discord.WebhookMessage = await ctx.send(msg_content,view=view,ephemeral=True)
+    message : discord.WebhookMessage = await interaction.followup.send(msg_content,view=view,ephemeral=True)
     pass
 
 
-def setup(bot):
+async def setup(bot):
     global BOT
 
     BOT = bot
 
-    BOT.add_command(commands.Command(help,brief="Shows infos for this bot's commands"))
+    BOT.tree.command(name="help",description="Shows infos for this bot's commands")(help)
     pass
 
-def teardown():
+async def teardown():
     BOT.remove_command("help")
     pass
