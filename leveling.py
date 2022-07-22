@@ -1,7 +1,7 @@
 from typing import Optional, Union
 import discord
 from discord.ext import commands, tasks
-from discord.ext.commands.converter import Option
+from discord import app_commands
 import aiohttp
 
 from libs import utils, config
@@ -9,7 +9,6 @@ from libs.interpret_levelup import format_msg as format_lvlup_template
 from loop import loop
 import logging, random, asyncio, time, json, io
 from datetime import datetime
-from moderation import RoleId
 
 from ormclasses import *
 
@@ -190,8 +189,9 @@ class Leveling(commands.Cog):
         self.leveling_collector.start()
         pass
 
-    def cog_unload(self):
+    async def cog_unload(self):
         super().__init__()
+        self.sql_saver_task()
         self.sql_saver_task.stop()
         pass
 
@@ -266,7 +266,7 @@ class Leveling(commands.Cog):
             pass
         pass
 
-    @tasks.loop(count=1,loop=loop)
+    @tasks.loop(count=1)
     async def leveling_collector(self):
         session : asql.AsyncSession = SESSION_FACTORY()
         try:
@@ -298,46 +298,47 @@ class Leveling(commands.Cog):
         pass
 
 
-    @commands.command("level")
-    async def level_get(self, ctx : commands.Context, user : discord.Member = Option(None,description="The member to get the level and xp for. If unset it will default to yourself")):
-        lvl_settings = self.LEVEL_SETTINGS[ctx.guild.id]
+    @app_commands.command(name="level")
+    @app_commands.describe(user="The member to get the level and xp for. If unset it will default to yourself")
+    async def level_get(self, interaction: discord.Interaction, user : discord.Member = None):
+        lvl_settings = self.LEVEL_SETTINGS[interaction.guild_id]
 
         if not lvl_settings.enabled:
-            await ctx.send("Levels? What levels? (Leveling is disabled)",ephemeral=True)
+            await interaction.response.send_message("Levels? What levels? (Leveling is disabled)",ephemeral=True)
             return
             pass
-        if user is None: user = ctx.author
+        if user is None: user = interaction.user
         if user.bot:
-            await ctx.send("Bots? Bots don't get any XP!",ephemeral=True)
+            await interaction.response.send_message("Bots? Bots don't get any XP!",ephemeral=True)
             return
 
-        levels = self.LEVELS.get(ctx.guild.id,LevelStats())
+        levels = self.LEVELS.get(interaction.guild_id,LevelStats())
         xp, level = levels[user.id]
         progress = round(xp_to_progress(level,xp),1)
 
         embed = discord.Embed(colour=user.colour,title=f"Leveling Stats")
         embed.set_author(name=user.display_name,icon_url=user.display_avatar.url)
         embed.description=f"Level: {level}\nXP: {xp} ({progress}%)"
-        await ctx.send(embed=embed,ephemeral=True)
+        await interaction.response.send_message(embed=embed,ephemeral=True)
         pass
 
-    @commands.command("leaderboard",brief="Ranks every member that ever got xp")
-    async def leaderboard(self, ctx : commands.Context):
-        lvl_settings = self.LEVEL_SETTINGS.get(ctx.guild.id,LevelSettings(False,0,0,0))
+    @app_commands.command(name="leaderboard",description="Ranks every member that ever got xp")
+    async def leaderboard(self, interaction: discord.Interaction):
+        lvl_settings = self.LEVEL_SETTINGS.get(interaction.guild_id,LevelSettings(False,0,0,0))
 
         if not lvl_settings.enabled:
-            await ctx.send("Levels? What levels? (Leveling is disabled)",ephemeral=True)
+            await interaction.response.send_message("Levels? What levels? (Leveling is disabled)",ephemeral=True)
             return
             pass
         
         def sort():
-            levels = self.LEVELS.get(ctx.guild.id,LevelStats())
+            levels = self.LEVELS.get(interaction.guild_id,LevelStats())
             return sorted(levels,key=lambda item:item[1][0],reverse=True)
             pass
         sorted_iter : list[tuple[MemberId,tuple[int,int]]] = await asyncio.get_event_loop().run_in_executor(None,sort)
         
 
-        embed = discord.Embed(colour = discord.Colour.green(),title=f"Leaderboard of {ctx.guild.name}",timestamp=datetime.utcnow())
+        embed = discord.Embed(colour = discord.Colour.green(),title=f"Leaderboard of {interaction.guild.name}",timestamp=datetime.utcnow())
         if len(sorted_iter) > 0:
             lines = []
             for i, (target, (xp, level)) in enumerate(sorted_iter):
@@ -350,12 +351,12 @@ class Leveling(commands.Cog):
         else:
             embed.description = "It's empty here... Just a vast nothingness"
 
-        await ctx.send(embed=embed,ephemeral=True)
+        await interaction.response.send_message(embed=embed,ephemeral=True)
         pass
 
-    async def mee6_import_worker(self, ctx : commands.Context):
+    async def mee6_import_worker(self, interaction: discord.Interaction):
         async def get_info(session : aiohttp.ClientSession, page : int) -> tuple[int, dict, Union[dict,str]]:
-            async with session.get(MEE6_LEADERBOARD_FORMAT.format(ctx.guild.id,page)) as resp:
+            async with session.get(MEE6_LEADERBOARD_FORMAT.format(interaction.guild_id,page)) as resp:
                 return resp.status, resp.headers, await resp.json() if resp.content_type == "application/json" else await resp.text()
                 pass
             pass
@@ -375,7 +376,7 @@ class Leveling(commands.Cog):
                     await asyncio.sleep(5)
                     pass
                 elif status == 404:
-                    await ctx.send("Mee6 doesn't seem know this server. There is no information to import.",ephemeral=True)
+                    await interaction.followup.send("Mee6 doesn't seem know this server. There is no information to import.",ephemeral=True)
                     pass
                 elif status == 429:
                     await asyncio.sleep(int(headers["retry-after"])+1)
@@ -386,10 +387,10 @@ class Leveling(commands.Cog):
                 pass
             pass
         
-        await ctx.send("All leveling data extracted. Now adding them to the database.",ephemeral=True)
+        await interaction.followup.send("All leveling data extracted. Now adding them to the database.",ephemeral=True)
 
-        self.LEVELS.setdefault(ctx.guild.id,LevelStats())
-        typhoon_levels = self.LEVELS[ctx.guild.id]
+        self.LEVELS.setdefault(interaction.guild_id,LevelStats())
+        typhoon_levels = self.LEVELS[interaction.guild_id]
         for stat in player_stats:
             p_id = stat["id"]
             p_xp = stat["xp"]
@@ -400,11 +401,11 @@ class Leveling(commands.Cog):
 
         session : asql.AsyncSession = SESSION_FACTORY()
         try:
-            result : CursorResult = await session.execute(sql.select(GuildLevels).where(GuildLevels.guild_id == str(ctx.guild.id)))
+            result : CursorResult = await session.execute(sql.select(GuildLevels).where(GuildLevels.guild_id == str(interaction.guild_id)))
             try:
                 sqlobj = result.scalar_one()
             except KeyError:
-                sqlobj = GuildLevels(guild_id = str(ctx.guild.id))
+                sqlobj = GuildLevels(guild_id = str(interaction.guild_id))
                 session.add(sqlobj)
                 pass
 
@@ -415,43 +416,44 @@ class Leveling(commands.Cog):
             await session.close()
             pass
 
-        await ctx.send("Level import complete! Check /leaderboard",ephemeral=True)
+        await interaction.followup.send("Level import complete! Check /leaderboard",ephemeral=True)
         pass
 
-    @commands.group("level_settings")
-    @utils.perm_message_check("https://tenor.com/view/you-shall-not-pass-lotr-do-not-enter-not-allowed-scream-gif-16729885\nYou don't have permissions to execute this command. (Requires Manage Server)",manage_guild=True)
-    async def level_settings(self, ctx : commands.Context):
-        pass
+    level_settings= app_commands.Group(name="level_settings", description="Commands to moderate the leveling system",
+    guild_only=True, default_permissions=discord.Permissions(manage_guild=True))
 
-    @level_settings.command("import_mee6",brief="Import this servers level stats from the Mee6 Bot",description="Import this servers level stats from the Mee6 Bot.\nThis might replace your old stats and if so it will ask for confirmation.")
-    async def import_mee6(self, ctx : commands.Context):
-        stats = self.LEVELS.get(ctx.guild.id)
+    @level_settings.command(name="import_mee6",description="Import this servers level stats from the Mee6 Bot")
+    async def import_mee6(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True,thinking=True)
+
+        stats = self.LEVELS.get(interaction.guild_id)
         if stats is not None and len(stats.internal.items()) > 0:
-            if not await utils.confirmation_interact(ctx,"There is already a leveling statistic for this server. Running this command will inadvertantly replace it. Are you sure you want to do this?"):
+            if not await utils.confirmation_interact(interaction,"There is already a leveling statistic for this server. Running this command will inadvertantly replace it. Are you sure you want to do this?"):
                 return
                 pass
             pass
 
-        await ctx.send("The import process will now start. This might take a few minutes.",ephemeral=True)
+        await interaction.followup.send("The import process will now start. This might take a few minutes.",ephemeral=True)
 
-        asyncio.create_task(self.mee6_import_worker(ctx))
+        asyncio.create_task(self.mee6_import_worker(interaction))
         pass
 
-    @level_settings.command("export",brief="Export the level statistics to a file")
-    async def level_export(self, ctx : commands.Context):
-        stats = self.LEVELS.get(ctx.guild.id)
+    @level_settings.command(name="export",description="Export the level statistics to a file")
+    async def level_export(self, interaction: discord.Interaction):
+        stats = self.LEVELS.get(interaction.guild_id)
         if stats is None:
-            await ctx.send("There is no leveling on this server yet. If you already have it enabled, this means it is empty.")
+            await interaction.response.send_message("There is no leveling on this server yet. If you already have it enabled, this means it is empty.")
+            return
             pass
 
         raw_stats = stats.to_raw()
 
         file_stream = io.StringIO(json.dumps(raw_stats))
-        file = discord.File(file_stream,f"levels-{ctx.guild.id}.json")
-        await ctx.send(file=file,ephemeral=True)
+        file = discord.File(file_stream,f"levels-{interaction.guild_id}.json")
+        await interaction.response.send_message(file=file,ephemeral=True)
         pass
 
-    @tasks.loop(minutes=1,loop=loop)
+    @tasks.loop(minutes=1)
     async def sql_saver_task(self):
         session : asql.AsyncSession = SESSION_FACTORY()
         try:
@@ -489,7 +491,7 @@ async def setup(bot : commands.Bot):
     BOT.DATA.LEVEL_SETTINGS = Leveling.LEVEL_SETTINGS
     BOT.DATA.REWARD_ROLES = Leveling.REWARD_ROLES
 
-    bot.add_cog(COG)
+    await bot.add_cog(COG)
     logging.info("Loaded Leveling extension!")
     pass
 

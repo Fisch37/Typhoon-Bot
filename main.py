@@ -172,7 +172,7 @@ async def main():
         BOT.load_extension("fun"),
         # BOT.load_extension("utility"),
         # BOT.load_extension("moderation"),
-        # BOT.load_extension("leveling"),
+        BOT.load_extension("leveling"),
         
         BOT.load_extension("help_ext"),
         # BOT.load_extension("config"),

@@ -88,23 +88,23 @@ def perm_message_check(error_msg : str = "No Permission",**perms : bool):
     return decorator
     pass
 
-async def confirmation_interact(ctx : commands.Context, question : str = "Are you sure you want to do this?", confirm_option : str = "Confirm",*,timeout : float =180) -> bool:
+async def confirmation_interact(interaction: discord.Interaction, question : str = "Are you sure you want to do this?", confirm_option : str = "Confirm",*,timeout : float =180) -> bool:
     class Confirmation(discord.ui.View):
         def __init__(view, *, timeout: Optional[float] = 180):
             view.response = False
             super().__init__(timeout=timeout)
 
         @discord.ui.button(label=confirm_option,style=discord.ButtonStyle.danger)
-        async def confirm(view, button, interaction : discord.Interaction):
-            await interaction.response.defer()
+        async def confirm(view, vinteraction : discord.Interaction, button):
+            await vinteraction.response.defer()
 
             view.response = True
             view.stop()
             pass
 
         @discord.ui.button(label="Cancel",style=discord.ButtonStyle.green)
-        async def cancel(view, button, interaction : discord.Interaction):
-            await interaction.response.defer()
+        async def cancel(view, vinteraction : discord.Interaction, button):
+            await vinteraction.response.defer()
 
             view.response = False
             view.stop()
@@ -112,7 +112,7 @@ async def confirmation_interact(ctx : commands.Context, question : str = "Are yo
         pass
 
     view = Confirmation(timeout=timeout)
-    msg = await ctx.send(question,view=view,ephemeral=True)
+    msg = await interaction.followup.send(question,view=view,ephemeral=True)
     
     timed_out = await view.wait()
     await msg.edit(content="Interaction completed. You can close this message now",view=None)
