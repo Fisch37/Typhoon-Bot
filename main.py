@@ -40,9 +40,10 @@ class Bot(commands.Bot):
             for guild in self.working_guilds:
                 self.tree.copy_global_to(guild=guild)
                 pass
-
-            await self.tree.sync()
             pass
+
+        await self.tree.sync()
+        logging.info("Synced commands with Discord!")
         pass
     pass
 
@@ -168,7 +169,7 @@ async def main():
         pass
 
     await asyncio.gather(
-        # BOT.load_extension("fun"),
+        BOT.load_extension("fun"),
         # BOT.load_extension("utility"),
         # BOT.load_extension("moderation"),
         # BOT.load_extension("leveling"),

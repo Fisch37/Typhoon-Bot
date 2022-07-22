@@ -5,7 +5,7 @@ from collections import OrderedDict
 
 import discord
 from discord.ext import commands
-from discord.ext.commands.converter import Option
+from discord import app_commands
 
 import sqlalchemy.ext.asyncio as asql
 from ormclasses import * # Also imports a whole bunch of stuff
@@ -25,12 +25,12 @@ class Fun(commands.Cog):
     CLONE_STATES : dict[int,dict[int,bool]] = {}
     CLONE_OVERRIDES : dict[int,list[bool,dict[int,bool]]] = {}
 
-    @commands.command(brief="Enable/Disable your clone",description="Enable/Disable your clone")
-    @commands.guild_only()
-    async def clone(self, ctx : commands.Context, state : bool):
+    @app_commands.command(description="Enable/Disable your clone")
+    @app_commands.guild_only()
+    async def clone(self, interaction: discord.Interaction, state : bool):
         session : asql.AsyncSession = SESSION_FACTORY()
         try:
-            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id==str(ctx.guild.id)))
+            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id==str(interaction.guild_id)))
             
             guildObj : Guild = result.scalar_one_or_none()
             if guildObj is None: # If there is no data, there is no cloning
@@ -38,7 +38,7 @@ class Fun(commands.Cog):
             else:
                 isEnabled = guildObj.clone_enabled
                 try:
-                    isEnabled = guildObj.clone_filter[str(ctx.channel.id)]
+                    isEnabled = guildObj.clone_filter[str(interaction.channel_id)]
                 except KeyError:
                     pass
                 pass
@@ -46,42 +46,41 @@ class Fun(commands.Cog):
             await session.close() # Close session
 
         if not isEnabled: # If cloning is not enabled, don't allow this command
-            await ctx.send("Awwww... The machines are down... Maybe talk to the administrators if they could enable cloning, as it is disabled at the moment.",ephemeral=True)
+            await interaction.response.send_message("Awwww... The machines are down... Maybe talk to the administrators if they could enable cloning, as it is disabled at the moment.",ephemeral=True)
             return
             pass
 
-        self.CLONE_STATES.setdefault(ctx.guild.id,{}) # Make sure that there is dictionary for the current guild
+        self.CLONE_STATES.setdefault(interaction.guild_id,{}) # Make sure that there is dictionary for the current guild
         
-        self.CLONE_STATES[ctx.guild.id][ctx.author.id] = state # Set the state
+        self.CLONE_STATES[interaction.guild_id][interaction.user.id] = state # Set the state
 
-        await ctx.send(f"Cloning is now {'enabled' if state else 'disabled'}",ephemeral=True)
+        await interaction.response.send_message(f"Cloning is now {'enabled' if state else 'disabled'}",ephemeral=True)
         pass
 
     ## Manage clones
 
-    @commands.group(name="manage_clones", brief="Configuration for the clone system")
-    async def manage_clones(self, ctx : commands.Context):
-        pass
+    manage_clones= app_commands.Group(name="manage_clones",description="Configuration for the clone system",guild_only=True)
 
-    @manage_clones.command(name="enable",brief="Completely enable/disable clones")
-    @commands.guild_only()
-    async def set_clone_mode(self, ctx : commands.Context, state : bool = Option(True,description="Whether or not cloning should be enabled")):
-        if not ctx.author.guild_permissions.is_superset(discord.Permissions(manage_guild=True)):
-            await ctx.send("You do not have permission for this command",ephemeral=True)
+    @manage_clones.command(name="enable",description="Completely enable/disable clones")
+    @app_commands.guild_only()
+    @app_commands.describe(state="Whether or not cloning should be enabled")
+    async def set_clone_mode(self, interaction: discord.Interaction, state : bool= True):
+        if not interaction.user.guild_permissions.is_superset(discord.Permissions(manage_guild=True)):
+            await interaction.response.send_message("You do not have permission for this command",ephemeral=True)
             return
             pass
 
         if not state: # Disable all clone in this guild if state==False
-            self.CLONE_STATES.setdefault(ctx.guild.id,{}) # Make sure a dictionary for this guild exists
-            self.CLONE_STATES[ctx.guild.id].clear()
+            self.CLONE_STATES.setdefault(interaction.guild_id,{}) # Make sure a dictionary for this guild exists
+            self.CLONE_STATES[interaction.guild_id].clear()
             pass
 
         session : asql.AsyncSession = SESSION_FACTORY()
         try:
-            result = await session.execute(sql.select(Guild).where(Guild.id == str(ctx.guild.id))) # Get the guild obj
+            result = await session.execute(sql.select(Guild).where(Guild.id == str(interaction.guild_id))) # Get the guild obj
             sqlGuild = result.scalar_one_or_none() # Actually assemble the Guild Obj from the row
             if sqlGuild is None: # Create new sql Guild Obj if it doesn't exist 
-                sqlGuild = Guild(id=str(ctx.guild.id))
+                sqlGuild = Guild(id=str(interaction.guild_id))
                 session.add(sqlGuild) # Add Guild Obj to database
                 pass
             sqlGuild.clone_enabled = state # Update state
@@ -91,81 +90,83 @@ class Fun(commands.Cog):
             await session.close()
 
         if state:
-            await ctx.send("So, cloning, eh? Interesting field of science... _Alright, start the machines! We trained this; come on!_",ephemeral=True)
+            await interaction.response.send_message("So, cloning, eh? Interesting field of science... _Alright, start the machines! We trained this; come on!_",ephemeral=True)
         else:
-            await ctx.send("Alright, alright, we'll shut the machines down... " + ("_Yes, shut them dow-- I know, I know, it's fine!_" if random.randrange(0,100)<30 else ""),ephemeral=True)
+            await interaction.response.send_message("Alright, alright, we'll shut the machines down... " + ("_Yes, shut them dow-- I know, I know, it's fine!_" if random.randrange(0,100)<30 else ""),ephemeral=True)
         pass
 
-    @manage_clones.group(name="filter")
-    async def manage_clones_filter(self, ctx : commands.Context):
-        pass
     
-    @manage_clones_filter.command(name="set",brief="Overrides the default clone setting for this channel")
-    @commands.guild_only()
+    manage_clones_filter= app_commands.Group(name="filter", description="Filter who may use the clone feature and where",parent=manage_clones,guild_only=True)
+    
+    @manage_clones_filter.command(name="set",description="Overrides the default clone setting for this channel")
+    @app_commands.describe(state="Whether cloning should be enabled or disabled in this channel")
+    @app_commands.guild_only
     @utils.perm_message_check("Sorry, but this action is only for the lab administrators (i.e. No Permission [need Manage Channel])\nhttps://tenor.com/view/no-i-dont-think-i-will-captain-america-old-capt-gif-17162888",manage_channels=True)
-    async def set_clone_filter(self, ctx : commands.Context, state : bool = Option(description="Whether cloning should be enabled or disabled in this channel")):
+    async def set_clone_filter(self, interaction: discord.Interaction, state : bool):
         session : asql.AsyncSession = SESSION_FACTORY()
         try:
-            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(ctx.guild.id))) # Get the current guild from the SQL Table
+            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(interaction.guild_id))) # Get the current guild from the SQL Table
             sqlGuild = result.scalar_one_or_none() # Retrieve the Guild object (or None if it doesn't exist)
             if sqlGuild is None: # Create a new entry if there is none at the moment
-                sqlGuild = Guild(id=str(ctx.guild.id))
+                sqlGuild = Guild(id=str(interaction.guild_id))
                 session.add(sqlGuild)
                 pass
 
-            sqlGuild.clone_filter[str(ctx.channel.id)] = state # Update the filter for that specific channel
+            sqlGuild.clone_filter[str(interaction.channel_id)] = state # Update the filter for that specific channel
 
-            self.CLONE_OVERRIDES.setdefault(ctx.guild.id,[None,None])
-            self.CLONE_OVERRIDES[ctx.guild.id][1] = dict(sqlGuild.clone_filter) # Save overrides in RAM
+            self.CLONE_OVERRIDES.setdefault(interaction.guild_id,[None,None])
+            self.CLONE_OVERRIDES[interaction.guild_id][1] = dict(sqlGuild.clone_filter) # Save overrides in RAM
 
             await session.commit()
         finally:
             await session.close()
 
-        await ctx.send(f"Well, this will get a little more complicated. Anyway, regardless of the original setting, you now {'''can''' if state else '''can't'''} use the clone system in this channel.",ephemeral=True)
+        await interaction.response.send_message(f"Well, this will get a little more complicated. Anyway, regardless of the original setting, you now {'''can''' if state else '''can't'''} use the clone system in this channel.",ephemeral=True)
         pass
 
-    @manage_clones_filter.command("remove",brief="Removes any override for this channel")
-    @commands.guild_only()
+    @manage_clones_filter.command(name="remove",description="Removes any override for this channel")
+    @app_commands.guild_only()
     @utils.perm_message_check("Sorry, this room is reserved for lab administrators only (No Permission [need Manage Channel])", manage_channels=True)
-    async def rem_clone_filter(self, ctx : commands.Context):
+    async def rem_clone_filter(self, interaction: discord.Interaction):
         session : asql.AsyncSession = SESSION_FACTORY()
 
         try:
-            result : CursorResult = await session.execute(sql.select(Guild.clone_filter).where(Guild.id == str(ctx.guild.id)))
+            result : CursorResult = await session.execute(sql.select(Guild.clone_filter).where(Guild.id == str(interaction.guild_id)))
             clone_filter : dict = result.scalar_one_or_none()
 
             if clone_filter is None: # Add new guild obj if it doesn't exist yet
-                sqlGuild = Guild(id=str(ctx.guild.id))
+                sqlGuild = Guild(id=str(interaction.guild_id))
                 session.add(sqlGuild)
                 clone_filter = sqlGuild.clone_filter
                 pass
 
+            clone_filter.get(str(interaction.channel_id))
             try:
-                clone_filter.pop(str(ctx.channel.id)) # Remove the channel override
+                clone_filter.pop(str(interaction.channel_id)) # Remove the channel override
             except KeyError:
-                await ctx.send("As there is no actual override for this channel, nothing was changed. I admire your engagement, though!",ephemeral=True)
+                await interaction.response.send_message("As there is no actual override for this channel, nothing was changed. I admire your engagement, though!",ephemeral=True)
                 pass
             else:
-                await ctx.send("The override was removed. This channel will now conform to the regular settings.", ephemeral=True)
+                await interaction.response.send_message("The override was removed. This channel will now conform to the regular settings.", ephemeral=True)
                 pass
 
-            self.CLONE_OVERRIDES.setdefault(ctx.guild.id,[None,None])
-            self.CLONE_OVERRIDES[ctx.guild.id][1] = dict(clone_filter) # Save overrides in RAM
+            self.CLONE_OVERRIDES.setdefault(interaction.guild_id,[None,None])
+            self.CLONE_OVERRIDES[interaction.guild_id][1] = dict(clone_filter) # Save overrides in RAM
             
+            await session.execute(sql.update(Guild).where(Guild.id == str(interaction.guild_id)).values(clone_filter=clone_filter))
             await session.commit() # Commit & Close
         finally:
             await session.close()
         pass
 
-    @manage_clones_filter.command("show",brief="List all the clone overrides on this server")
-    @commands.guild_only()
+    @manage_clones_filter.command(name="show",description="List all the clone overrides on this server")
+    @app_commands.guild_only()
     @utils.perm_message_check("Oi! This data's classified! (No Permission [need Manage Channel])",manage_channels=True)
-    async def show_clone_filter(self, ctx : commands.Context):
+    async def show_clone_filter(self, interaction: discord.Interaction):
         session : asql.AsyncSession = SESSION_FACTORY()
         try:
-            filterResult : CursorResult = await session.execute(sql.select(Guild.clone_filter).where(Guild.id == str(ctx.guild.id))) # Get all channel overrides
-            isEnabled : Optional[bool] = (await session.execute(sql.select(Guild.clone_enabled).where(Guild.id == str(ctx.guild.id)))).scalar_one_or_none() # Get if cloning is currently enabled
+            filterResult : CursorResult = await session.execute(sql.select(Guild.clone_filter).where(Guild.id == str(interaction.guild_id))) # Get all channel overrides
+            isEnabled : Optional[bool] = (await session.execute(sql.select(Guild.clone_enabled).where(Guild.id == str(interaction.guild_id)))).scalar_one_or_none() # Get if cloning is currently enabled
         finally:
             await session.close()
         
@@ -175,13 +176,18 @@ class Fun(commands.Cog):
             pass
         del filterResult
         
-        self.CLONE_OVERRIDES[ctx.guild.id] = [bool(isEnabled),dict(cloneOverride)] # Copy overrides to RAM for the listener
+        self.CLONE_OVERRIDES[interaction.guild_id] = [bool(isEnabled),dict(cloneOverride)] # Copy overrides to RAM for the listener
 
         # Create dictionary with channel objects instead of ids
         channel_overrides = {}
-        for channel_id, override in cloneOverride.items():
-            channel = ctx.guild.get_channel(int(channel_id))
-            channel_overrides[channel] = override
+        for channel_id, override in tuple(cloneOverride.items()): # Converting to a tuple beforehand allows us to change the dictionary while iterating over it
+            channel = interaction.guild.get_channel(int(channel_id))
+            if channel is not None:
+                channel_overrides[channel] = override
+                pass
+            else: # Remove invalid channels for safety (specifically to prevent errors in sorting later)
+                cloneOverride.pop(channel_id)
+                pass
             pass
         # Create new sorted channel override dictionary
         ordered_channel_overrides : OrderedDict[discord.TextChannel,bool] = OrderedDict()
@@ -190,13 +196,13 @@ class Fun(commands.Cog):
             pass
         del channel_overrides, cloneOverride
 
-        embed = discord.Embed(colour=ctx.author.colour,title="Clone Channel Override")
+        embed = discord.Embed(colour=interaction.user.colour,title="Clone Channel Override")
         embed.description=f"Non-override cloning is {'Enabled' if isEnabled else 'Disabled'}"
         for channel, override in ordered_channel_overrides.items():
             embed.add_field(name=channel.name,value="Enabled" if override else "Disabled")
             pass
 
-        await ctx.send(embed=embed,ephemeral=True)
+        await interaction.response.send_message(embed=embed,ephemeral=True)
         pass
 
     @commands.Cog.listener("on_message")
@@ -241,22 +247,25 @@ class Fun(commands.Cog):
         pass
     
     # Hehe, Tableshrug
-    @commands.command("tableshrug",brief="Send a message with a tableshrug appended (┻━┻¯\_(ツ)_/¯┻━┻)")
-    async def tableshrug(self, ctx : commands.Context, message : str = ""):
-        webhook = await WEBHOOK_POOL.get(ctx.channel,reason="Tableshrug!")
-        await webhook.send(message + " ┻━┻¯\_(ツ)_/¯┻━┻",username=ctx.author.display_name,avatar_url=ctx.author.avatar.url)
-        await ctx.send("Message sent! (Well, obviously)",ephemeral=True)
+    @app_commands.command(name="tableshrug",description="Send a message with a tableshrug appended (┻━┻¯\_(ツ)_/¯┻━┻)")
+    async def tableshrug(self, interaction: discord.Interaction, message : str = ""):
+        webhook = await WEBHOOK_POOL.get(interaction.channel,reason="Tableshrug!")
+        await webhook.send(message + " ┻━┻¯\_(ツ)_/¯┻━┻",username=interaction.user.display_name,avatar_url=interaction.user.avatar.url)
+        await interaction.response.send_message("Message sent! (Well, obviously)",ephemeral=True)
         pass
 
     # GIF related stuff
     PATPATS : list[str] = []
     CUDDLES : list[str] = []
 
-    @commands.command(name="passtheburrito",brief="Passes the burrito (or multiple, actually)")
-    async def passtheburrito(self, ctx : commands.Context, amount : int = Option(1,description="The amount of burritos to pass (max 10)")):
+    @app_commands.command(name="passtheburrito",description="Passes the burrito (or multiple, actually)")
+    @app_commands.describe(amount="The amount of burritos to pass (max 10)")
+    async def passtheburrito(self, interaction: discord.Interaction, amount: int= 1):
+        await interaction.response.defer()
+
         amount = min(amount,CONFIG.MAX_BURRITOS)
         for i in range(amount):
-            await ctx.send("https://cdn.discordapp.com/attachments/734461254747553826/754372969890840627/image0-29.gif")
+            await interaction.followup.send("https://cdn.discordapp.com/attachments/734461254747553826/754372969890840627/image0-29.gif")
             pass
         pass
 
@@ -321,13 +330,17 @@ class Fun(commands.Cog):
         return embed
         pass
 
-    @commands.command(name="patpat",brief="Pats are neat, I like 'em")
+    @app_commands.command(name="patpat",description="Pats are neat, I like 'em")
+    @app_commands.describe(target="The server member to pat. Choose whoever you like!", comment="An optional comment to attach to the message")
+    @app_commands.guild_only
     async def patpat(
         self, 
-        ctx : commands.Context, 
-        target : discord.Member = Option(description="The server member to pat. Choose whoever you like!"), 
-        comment : str = Option(None,description="An optional comment to attach to the message")
+        interaction: discord.Interaction, 
+        target : discord.Member, 
+        comment : str = None
         ):
+        await interaction.response.defer()
+
         message : discord.Message = ...
 
         class ResponseView(discord.ui.View):
@@ -335,13 +348,13 @@ class Fun(commands.Cog):
                 await message.edit(view=None)
                 pass
 
-            @discord.ui.button(label=f"Respond to {ctx.author.display_name}",style=discord.ButtonStyle.green)
-            async def respond(view, button : discord.ui.Button, interaction : discord.Interaction):
-                if interaction.user != target: # Only allow response for target
+            @discord.ui.button(label=f"Respond to {interaction.user.display_name}",style=discord.ButtonStyle.green)
+            async def respond(view, vinteraction : discord.Interaction, button : discord.ui.Button):
+                if vinteraction.user != target: # Only allow response for target
                     return
                     pass
 
-                await ctx.send(embed=self.assemblePatpat(target,ctx.author,None,True))
+                await vinteraction.response.send_message(embed=self.assemblePatpat(target,interaction.user,None,True))
                 button.disabled = True
                 view.stop()
 
@@ -349,30 +362,39 @@ class Fun(commands.Cog):
                 pass
             pass
         
-        message = await ctx.send(embed=self.assemblePatpat(ctx.author,target,comment),view=ResponseView(timeout=CONFIG.PAT_CUDDLE_RESP_TIMEOUT))
+        message = await interaction.followup.send(
+            embed=self.assemblePatpat(interaction.user,target,comment),
+            view=ResponseView(timeout=CONFIG.PAT_CUDDLE_RESP_TIMEOUT)
+        )
         pass
 
-    @commands.command(name="cuddle",brief="Cuddles! Nice, warm cuddles and hugs!")
+    @app_commands.command(name="cuddle",description="Cuddles! Nice, warm cuddles and hugs!")
+    @app_commands.describe( target="The server member to hug. Choose whoever you like. Or don't like...", 
+                            comment="An optional comment to attach to the message"
+    )
+    @app_commands.guild_only
     async def cuddle(
         self, 
-        ctx : commands.Context,
-        target : discord.Member = Option(description="The server member to hug. Choose whoever you like. Or don't like..."), 
-        comment : str = Option(None,description="An optional comment to attach to the message")
+        interaction: discord.Interaction,
+        target : discord.Member, 
+        comment : str = None
         ): 
-        message : discord.Message = ...
+        await interaction.response.defer()
+
+        message : discord.WebhookMessage = ...
 
         class ResponseView(discord.ui.View):
             async def on_timeout(self) -> None:
                 await message.edit(view=None)
                 pass
 
-            @discord.ui.button(label=f"Hug {ctx.author.display_name} back",style=discord.ButtonStyle.green)
-            async def respond(view, button : discord.ui.Button, interaction : discord.Interaction):
+            @discord.ui.button(label=f"Hug {interaction.user.display_name} back",style=discord.ButtonStyle.green)
+            async def respond(view, vinteraction : discord.Interaction, button : discord.ui.Button):
                 if interaction.user != target: # Only allow response for target
                     return
                     pass
 
-                await ctx.send(embed=self.assembleCuddle(target,ctx.author,None,True))
+                await vinteraction.response.send_message(embed=self.assembleCuddle(target,interaction.user,None,True))
                 button.disabled = True
                 view.stop()
 
@@ -380,7 +402,10 @@ class Fun(commands.Cog):
                 pass
             pass
         
-        message = await ctx.send(embed=self.assembleCuddle(ctx.author,target,comment),view=ResponseView(timeout=CONFIG.PAT_CUDDLE_RESP_TIMEOUT))
+        message = await interaction.followup.send(
+            embed=self.assembleCuddle(interaction.user,target,comment),
+            view=ResponseView(timeout=CONFIG.PAT_CUDDLE_RESP_TIMEOUT)
+        )
         pass
     pass
 
@@ -398,7 +423,7 @@ async def setup(bot : commands.Bot):
     # The rest
     bot.DATA.CLONE_OVERRIDES= Fun.CLONE_OVERRIDES
 
-    bot.add_cog(Fun())
+    await bot.add_cog(Fun())
 
     with open(CONFIG.PATPAT_COLLECTION) as file:
         Fun.PATPATS = json.loads(file.read())
@@ -411,5 +436,5 @@ async def setup(bot : commands.Bot):
     pass
 
 async def teardown(bot : commands.Bot):
-    bot.remove_cog("Fun")
+    await bot.remove_cog("Fun")
     pass
