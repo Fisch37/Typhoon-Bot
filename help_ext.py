@@ -1,8 +1,13 @@
 from discord.ext import commands
+from discord import app_commands
 import discord, asyncio
 from libs import utils
 
 BOT : commands.Bot = ...
+
+def get_app_commands_for_cog(cog: commands.Cog) -> frozenset[app_commands.Group|app_commands.Command]:
+    return frozenset(filter(lambda attr: type(attr) in (app_commands.Group, app_commands.Command),cog.__dict__.values()))
+    pass
 
 def split_help(content : str) -> tuple[str]:
     messages = [""]
@@ -26,7 +31,7 @@ def help_command_call_struct(command : discord.app_commands.Command) -> str:
     paramstring = ""
     for name, parameter in params:
         onestring = "".join(("<",name,">"))
-        if parameter.default is not None:
+        if parameter.default is not Ellipsis:
             onestring = "".join(("[",onestring,"]"))
             pass
 
@@ -38,33 +43,33 @@ def help_command_call_struct(command : discord.app_commands.Command) -> str:
     pass
 
 def help_from_cog(cog : commands.Cog) -> str:
-    resp = "```md\n"
-    for command in cog.get_commands():
-        if isinstance(command,commands.Group):
+    resp = f"```md\n# {cog.__cog_name__}\n{cog.description}\n"
+    for command in get_app_commands_for_cog(cog):
+        if isinstance(command,app_commands.Group):
             lines = help_from_group(command).splitlines(True)
             indented = "\t" + "\t".join(lines[1:])
             resp = "".join((resp,"\n+ ",lines[0],indented))
             pass
         else:
-            resp = "".join((resp,"\n+ ",help_command_call_struct(command),"\n\t- ",str(command.brief)))
+            resp = "".join((resp,"\n+ ",help_command_call_struct(command),"\n\t- ",str(command.description)))
             pass
         pass
 
     return "".join((resp,"```"))
     pass
 
-def help_from_group(command_group : commands.Group) -> str:
-    resp = f"{command_group.name}: {command_group.brief}\n"
+def help_from_group(command_group : discord.app_commands.Group) -> str:
+    resp = f"{command_group.name}: {command_group.description}\n"
     for command in command_group.commands:
-        if isinstance(command,commands.Group):
-            command : commands.Group
+        command: discord.app_commands.Group|discord.app_commands.Command
+        if isinstance(command,discord.app_commands.Group):
             command_help = help_from_group(command)
 
             indented = "\t".join(command_help.splitlines(True))
             resp = "".join((resp,"+ ",indented,"\n"))
             pass
         else:
-            resp = "".join((resp,"+ ",help_command_call_struct(command),"\n\t- ",command.brief,"\n"))
+            resp = "".join((resp,"+ ",help_command_call_struct(command),"\n\t- ",command.description,"\n"))
             pass
         pass
 
@@ -77,14 +82,14 @@ def whole_help() -> str:
     all_cogs_resp = ""
     for name, cog in BOT.cogs.items():
         cog_resp = f"\n# {name}\n{cog.description}\n"
-        for command in cog.get_commands():
-            if isinstance(command,commands.Group):
+        for command in get_app_commands_for_cog(cog):
+            if isinstance(command,discord.app_commands.Group):
                 lines = help_from_group(command).splitlines(True)
                 indented = "\t" + "\t".join(lines[1:])
                 cog_resp = "".join((cog_resp,"\n+ ",lines[0],indented))
                 pass
             else:
-                cog_resp = "".join((cog_resp,f"\n+ {help_command_call_struct(command)}\n\t- {command.brief}"))
+                cog_resp = "".join((cog_resp,f"\n+ {help_command_call_struct(command)}\n\t- {command.description}"))
                 pass
 
             cog_commands.add(command) # Add command to set of commands with a cog
@@ -96,7 +101,7 @@ def whole_help() -> str:
     no_cog_commands = set(BOT.tree.get_commands()).difference(cog_commands)
     no_cogs_resp = "# No category\n"
     for command in no_cog_commands:
-        if isinstance(command,commands.Group):
+        if isinstance(command,discord.app_commands.Group):
             no_cogs_resp = "".join((cog_resp,help_from_group(command)))
             pass
         else:
@@ -107,12 +112,12 @@ def whole_help() -> str:
     return "".join(("```md\n",no_cogs_resp,"\n",all_cogs_resp,"```"))
     pass
 
-def searchCommands(matcher : str) -> set[commands.Command]:
+def searchCommands(matcher : str) -> set[app_commands.Command]:
     return set(filter(lambda command: utils.stringFilter(command.name,matcher),BOT.tree.get_commands()))
     pass
 
 async def help(interaction : discord.Interaction, command_or_category : str = ""):
-    await interaction.response.defer(ephemeral=True,thinking=True)
+    await interaction.response.defer(ephemeral=True)
 
     message : discord.WebhookMessage = ...
 
@@ -123,7 +128,7 @@ async def help(interaction : discord.Interaction, command_or_category : str = ""
             row=0
         )
         async def cog_select(self : discord.ui.View,vinteraction : discord.Interaction, select : discord.ui.Select):
-            await vinteraction.response.defer(ephemeral=True,thinking=True)
+            await vinteraction.response.defer(ephemeral=True)
             
             selected_cog = vinteraction.data.get("values")[0] # Get name of selected cog from interaction
 
@@ -142,6 +147,8 @@ async def help(interaction : discord.Interaction, command_or_category : str = ""
 
         @discord.ui.button(label="Search for command",style=discord.ButtonStyle.primary,row=1)
         async def search_for_command(self : discord.ui.View, vinteraction : discord.Interaction, button : discord.ui.Button):
+            await vinteraction.response.send_message("This function is not yet implemented and will be so in the future using modals", ephemeral=True)
+            raise NotImplementedError("This function is not yet implemented and will be so in the future using modals")
             select : discord.ui.Select = self.children[0] # Get select menu from message components
             button.disabled = True # Disable button
             select.disabled = True # Disable select menu
@@ -158,11 +165,11 @@ async def help(interaction : discord.Interaction, command_or_category : str = ""
             if len(results) > 0:
                 searchResp = "```md\n" # Set up result
                 for command in results:
-                    if isinstance(command,commands.Group):
+                    if isinstance(command,app_commands.Group):
                         searchResp = "".join((searchResp,help_from_group(command),"\n"))
                         pass
                     else:
-                        searchResp = "".join((searchResp,f"+ {help_command_call_struct(command)}\n\t- {command.description if command.description != '' else command.brief}\n"))
+                        searchResp = "".join((searchResp,f"+ {help_command_call_struct(command)}\n\t- {command.description}\n"))
                         pass
                     pass
                 searchResp = "".join((searchResp,"```"))
@@ -184,9 +191,9 @@ async def help(interaction : discord.Interaction, command_or_category : str = ""
 
         cog = BOT.get_cog(command_or_category)
         if cog is None: # If there is no cog with that name, search for command instead
-            command = BOT.get_command(command_or_category)
+            command = BOT.tree.get_command(command_or_category)
             if command is not None:
-                if isinstance(command, commands.Group):
+                if isinstance(command, app_commands.Group):
                     msg_content = "".join((msg_content,help_from_group(command),"```"))
                     pass
                 else:
