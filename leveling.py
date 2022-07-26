@@ -191,7 +191,7 @@ class Leveling(commands.Cog):
 
     async def cog_unload(self):
         super().__init__()
-        self.sql_saver_task()
+        await self.sql_saver_task()
         self.sql_saver_task.stop()
         pass
 
