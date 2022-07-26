@@ -1,10 +1,8 @@
-from discord import threads
 import emoji
-from sqlalchemy.exc import NoResultFound
 from loop import loop
 
 from libs import utils, config
-import logging, random, asyncio, dataclasses, json
+import logging, random, asyncio, dataclasses
 from datetime import datetime
 from typing import Union, Optional, Literal
 from difflib import SequenceMatcher
@@ -12,7 +10,7 @@ from libs.logging_utils import LoggingSettings
 
 import discord
 from discord.ext import commands, tasks
-from discord.ext.commands.converter import Option
+from discord import app_commands
 
 from ormclasses import *
 
@@ -49,17 +47,18 @@ async def get_warnings(session : asql.AsyncSession, guild_id : int):
     return warnings
     pass
 
-async def wait_for_role(ctx : commands.Context, error_msg : str = "That message does not have a role associated to it. Please try again",*, check = None, return_message : bool = False) -> Union[discord.Role,tuple[discord.Role,discord.Message]]:
+async def wait_for_role(interaction: discord.Interaction, error_msg : str = "That message does not have a role associated to it. Please try again",*, check = None, return_message : bool = False) -> Union[discord.Role,tuple[discord.Role,discord.Message]]:
     converter = commands.RoleConverter()
+    ctx= await commands.Context.from_interaction(interaction) # This is a little untidy and could be solved better by using a Transformer instead of a Converter
     while True:
-        message : discord.Message = await BOT.wait_for("message",check=lambda message: message.channel == ctx.channel and message.author == ctx.author)
+        message : discord.Message = await BOT.wait_for("message",check=lambda message: message.channel.id == interaction.channel_id and message.author == interaction.user)
         try:
             role = await converter.convert(ctx,message.content)
             if not(check is None or check(role)): raise commands.BadArgument()
             pass
         except commands.BadArgument:
             await message.delete()
-            await ctx.send(error_msg,ephemeral=True)
+            await interaction.followup.send(error_msg,ephemeral=True)
             pass
         else:
             break
@@ -284,8 +283,8 @@ MuteDict = dict[JSONMemberId,MuteInf]
 
 # View Objects
 class GodRoleView(discord.ui.View):
-    def __init__(self, ctx : commands.Context, cog : commands.Cog, *, timeout : float):
-        self.ctx = ctx
+    def __init__(self, interaction: discord.Interaction, cog : commands.Cog, *, timeout : float):
+        self.interaction= interaction
         self.message : discord.Message = ...
         self.cog = cog
 
@@ -303,31 +302,31 @@ class GodRoleView(discord.ui.View):
         embed.title = "List of God Roles"
         embed.colour = discord.Color.red()
         
-        embed.description = "\n".join([self.ctx.guild.get_role(int(role_id)).mention for role_id in self.cog.GOD_ROLES[self.ctx.guild.id]])
+        embed.description = "\n".join([self.interaction.guild.get_role(int(role_id)).mention for role_id in self.cog.GOD_ROLES[self.interaction.guild_id]])
 
         await self.message.edit(embed=embed)
         pass
 
     @discord.ui.button(label="Add",style=discord.ButtonStyle.primary)
-    async def add_god_role(self, button : discord.ui.Button, interaction : discord.Interaction):
-        await interaction.response.send_message("Please send a message with the role you mean to add",ephemeral=True)
+    async def add_god_role(self, vinteraction : discord.Interaction, button : discord.ui.Button):
+        await vinteraction.response.send_message("Please send a message with the role you mean to add",ephemeral=True)
         
         
         while True:
-            role, message = await wait_for_role(self.ctx,return_message=True)
+            role, message = await wait_for_role(self.interaction,return_message=True)
             await message.delete()
-            if str(role.id) in self.cog.GOD_ROLES[interaction.guild_id]:
-                await self.ctx.send("This role is already a god. Please choose another one",ephemeral=True)
+            if str(role.id) in self.cog.GOD_ROLES[vinteraction.guild_id]:
+                await self.interaction.followup.send("This role is already a god. Please choose another one",ephemeral=True)
                 pass
             else:
                 break
             pass
         
-        self.cog.GOD_ROLES[self.ctx.guild.id].add(str(role.id))
+        self.cog.GOD_ROLES[vinteraction.guild_id].add(str(role.id))
 
         session : asql.AsyncSession = SESSION_FACTORY()
         try:
-            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(interaction.guild_id)))
+            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(vinteraction.guild_id)))
             sql_guild : Guild = result.scalar_one()
             sql_guild.god_roles.append(str(role.id))
             await session.commit()
@@ -338,24 +337,24 @@ class GodRoleView(discord.ui.View):
         pass
 
     @discord.ui.button(label="Remove",style=discord.ButtonStyle.secondary)
-    async def rem_god_role(self, button : discord.ui.Button, interaction : discord.Interaction):
-        await interaction.response.send_message("Please send a message with the role you mean to remove",ephemeral=True)
+    async def rem_god_role(self, vinteraction : discord.Interaction, button : discord.ui.Button):
+        await vinteraction.response.send_message("Please send a message with the role you mean to remove",ephemeral=True)
         
         
         while True:
-            role, message = await wait_for_role(self.ctx,return_message=True)
+            role, message = await wait_for_role(self.interaction,return_message=True)
             await message.delete()
-            if str(role.id) not in self.cog.GOD_ROLES[interaction.guild_id]:
-                await self.ctx.send("This is not a god... You realise that right?",ephemeral=True)
+            if str(role.id) not in self.cog.GOD_ROLES[vinteraction.guild_id]:
+                await self.interaction.response.send_message("This is not a god... You realise that right?",ephemeral=True)
                 pass
             else:
                 break
             pass
         
-        self.cog.GOD_ROLES[self.ctx.guild.id].remove(str(role.id))
+        self.cog.GOD_ROLES[vinteraction.guild_id].remove(str(role.id))
         session : asql.AsyncSession = SESSION_FACTORY()
         try:
-            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(interaction.guild_id)))
+            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(vinteraction.guild_id)))
             sql_guild : Guild = result.scalar_one()
             sql_guild.god_roles.remove(str(role.id))
             await session.commit()
@@ -366,22 +365,22 @@ class GodRoleView(discord.ui.View):
         pass
 
     @discord.ui.button(label="Close",style=discord.ButtonStyle.danger)
-    async def exit_interaction(self, button : discord.ui.Button, interaction : discord.Interaction):
-        await interaction.response.defer()
-        await self.message.edit("```\nInteraction has been closed```",view=None)
+    async def exit_interaction(self, vinteraction : discord.Interaction, button : discord.ui.Button):
+        await vinteraction.response.defer()
+        await self.message.edit(content="```\nInteraction has been closed```",view=None)
         self.stop()
         pass
     pass
 
 
 class LoggingSettingsView(discord.ui.View):
-    def __init__(self, ctx : commands.Context, cog : commands.Cog, *, timeout : float):
+    def __init__(self, interaction: discord.Interaction, cog : "Moderation", *, timeout : float):
         super().__init__(timeout=timeout)
         self.cog = cog
-        self.ctx = ctx
+        self.interaction= interaction
         self.message : discord.Message = ...
 
-        self.embed = discord.Embed(title=f"Logging Settings of {ctx.guild.name}",colour=discord.Colour.blue())
+        self.embed = discord.Embed(title=f"Logging Settings of {interaction.guild.name}",colour=discord.Colour.blue())
         self.embed.add_field(name="Setting Title",value="Empty")
         self.embed.add_field(name="Current State",value="Empty")
 
@@ -389,7 +388,7 @@ class LoggingSettingsView(discord.ui.View):
         pass
 
     async def update_message(self):
-        settings = self.cog.LOGGING_SETTINGS[self.ctx.guild.id]
+        settings = self.cog.LOGGING_SETTINGS[self.interaction.guild_id]
 
         translation_table = {
             "moderation" : "Moderation",
@@ -409,7 +408,7 @@ class LoggingSettingsView(discord.ui.View):
         pass
 
     @discord.ui.button(label="Enable Event", style=discord.ButtonStyle.green,row=0)
-    async def en_event(self, button : discord.ui.Button, interaction : discord.Interaction):
+    async def en_event(self, interaction: discord.Interaction, button : discord.ui.Button):
         self.selected_state = True
         utils.first(self.children,lambda item: isinstance(item,discord.ui.Select)).disabled = False
         await self.update_message()
@@ -418,7 +417,7 @@ class LoggingSettingsView(discord.ui.View):
         pass
 
     @discord.ui.button(label="Disable Event", style=discord.ButtonStyle.red,row=0)
-    async def da_event(self, button : discord.ui.Button, interaction : discord.Interaction):
+    async def da_event(self, interaction: discord.Interaction, button : discord.ui.Button):
         self.selected_state = False
         utils.first(self.children,lambda item: isinstance(item,discord.ui.Select)).disabled = False
         await self.update_message()
@@ -440,7 +439,7 @@ class LoggingSettingsView(discord.ui.View):
         # discord.SelectOption(label="Threads",value="threads",description="Log member interactions with threads"),
         discord.SelectOption(label="Thread Moderation",value="threads_mod",description="Log changes to threads")
     ])
-    async def select_event(self, select : discord.ui.Select, interaction : discord.Interaction):
+    async def select_event(self, interaction: discord.Interaction, select : discord.ui.Select):
         settings : LoggingSettings = self.cog.LOGGING_SETTINGS[interaction.guild_id]
         setattr(settings,interaction.data["values"][0],self.selected_state)
         
@@ -492,14 +491,17 @@ class Moderation(commands.Cog):
         self.warn_archive_task.start()
         pass
 
-    def cog_unload(self):
+    async def cog_unload(self):
+        pass
 
-        return super().cog_unload()
+    async def cog_load(self):
+        asyncio.create_task(logger_task())
+        asyncio.create_task(self.logging_creator())
         pass
 
     # Automod
     def check_for_god_role(self, member : discord.Member):
-        return len(self.GOD_ROLES[member.guild.id].intersection({role.id for role in member.roles})) > 0
+        return len(self.GOD_ROLES[member.guild.id].intersection({str(role.id) for role in member.roles})) > 0
         pass
 
     async def spam_actions(self, message : discord.Message, settings : ModConfig):
@@ -614,16 +616,18 @@ class Moderation(commands.Cog):
 
     # Warnings
 
-    @commands.command("warn")
-    @utils.perm_message_check("Oh? Warnings? I'll give you warnings! (No Permission -- Need Manage Roles)", manage_roles=True)
-    async def warn_user(self, ctx : commands.Context, target : discord.Member = Option(description="The member you want to warn"), reason : str = Option(description="A reason for warning said member",default=None)):
+    @app_commands.command(name="warn")
+    @app_commands.default_permissions(manage_roles=True)
+    @app_commands.describe(target="The member you want to warn", reason="A reason for warning said member")
+    # @utils.perm_message_check("Oh? Warnings? I'll give you warnings! (No Permission -- Need Manage Roles)", manage_roles=True)
+    async def warn_user(self, interaction: discord.Interaction, target : discord.Member, reason : str = None):
         if len(reason) > 200:
-            await ctx.send(f"Please keep your reasons short and compact. Was {len(reason)} characters, should be 200 or below",ephemeral=True)
+            await interaction.response.send_message(f"Please keep your reasons short and compact. Was {len(reason)} characters, should be 200 or below",ephemeral=True)
             return
 
-        await self.create_new_warning(ctx.guild,target,ctx.author,reason)
+        await self.create_new_warning(interaction.guild,target,interaction.user,reason)
 
-        await ctx.send(f"Warned {target.mention} with reason\n```\n{reason}```",ephemeral=True)
+        await interaction.response.send_message(f"Warned {target.mention} with reason\n```\n{reason}```",ephemeral=True)
         pass
 
     async def create_new_warning(self, guild : discord.Guild, target : discord.Member, author : discord.Member, reason : str):
@@ -659,7 +663,7 @@ class Moderation(commands.Cog):
         await Warn.database_save_all(guild,new_warnings)
         pass
 
-    @tasks.loop(minutes=5,loop=loop)
+    @tasks.loop(minutes=5)
     async def warn_archive_task(self):
         timestamp = datetime.utcnow().timestamp()
 
@@ -667,115 +671,111 @@ class Moderation(commands.Cog):
         pass
 
     # Channel Mod
-    @commands.group("lock",brief="In a locked channel, people can't write by default")
-    @commands.guild_only()
-    @utils.perm_message_check("Hey! Wait! Put that lock down! Stop it! (No Permission)",manage_channels=True)
-    async def lock(self,ctx):
+    lock= app_commands.Group(name="lock",description="In a locked channel, people can't write by default",
+    guild_only=True,default_permissions=discord.Permissions(manage_channels=True))
+
+    @lock.command(name="set",description="Lock this channel")
+    async def set_lock(self, interaction: discord.Interaction):
+        await interaction.channel.set_permissions(interaction.guild.default_role,overwrite=discord.PermissionOverwrite(send_messages=False))
+        await interaction.response.send_message("🔒 **This channel has been locked** 🔒")
         pass
 
-    @lock.command("set",brief="Lock this channel")
-    async def set_lock(self, ctx : commands.Context):
-        await ctx.channel.set_permissions(ctx.guild.default_role,overwrite=discord.PermissionOverwrite(send_messages=False))
-        await ctx.send("🔒 **This channel has been locked** 🔒")
-        pass
-
-    @lock.command("remove",brief="Unlock this channel")
-    async def rem_lock(self, ctx : commands.Context):
-        await ctx.channel.set_permissions(ctx.guild.default_role,overwrite=discord.PermissionOverwrite(send_messages=True))
-        await ctx.send("🔓 **This channel has been unlocked** 🔓")
+    @lock.command(name="remove",description="Unlock this channel")
+    async def rem_lock(self, interaction: discord.Interaction):
+        await interaction.channel.set_permissions(interaction.guild.default_role,overwrite=discord.PermissionOverwrite(send_messages=True))
+        await interaction.response.send_message("🔓 **This channel has been unlocked** 🔓")
         pass
 
     ## Anarchy
-    @commands.group("anarchy",brief="Anarchy is... well, it's a thing.")
-    @commands.guild_only()
-    @utils.perm_message_check("Now, this is interesting... I know what the command looks like, but to be honest that is kind of a lie... (No Permission)", manage_channels=True)
-    async def anarchy(self,ctx):
-        pass
+    anarchy= app_commands.Group(name="anarchy",description="Anarchy is... well, it's a thing.",
+    guild_only=True, default_permissions=discord.Permissions(manage_channels=True))
 
-    @anarchy.after_invoke
-    async def anarchy_sql_update(self,ctx : commands.Context):
+    @anarchy.command(name="enable",description="Excludes this channel from the automod")
+    async def set_anarchy(self, interaction: discord.Interaction):
         try:
-            sqlguild, session = await get_sql_guild(ctx.guild.id)
-            # Remove all outdated channels (channels that were deleted)
-            all_channel_ids : list[ChannelId] = [channel.id for channel in ctx.guild.text_channels]
-
-            prev_anarchies = sqlguild.anarchies.copy()
-            sqlguild.anarchies.clear()
-            sqlguild.anarchies.extend(filter(lambda channel_str: int(channel_str) in all_channel_ids , prev_anarchies))
-            # Update the RAM dict with the anarchy channels
-            self.ANARCHIES.setdefault(ctx.guild.id,set())
-            self.ANARCHIES[ctx.guild.id].clear()
-            self.ANARCHIES[ctx.guild.id].update([int(channel_str) for channel_str in sqlguild.anarchies])
-
-            await session.commit()
-        finally:
-            await session.close() # Commit & Close
-        pass
-
-    @anarchy.command("enable",brief="Excludes this channel from the automod")
-    async def set_anarchy(self, ctx : commands.Context):
-        try:
-            sqlguild, session = await get_sql_guild(ctx.guild.id) # Get the SQL Reference to the guild
-            if not str(ctx.channel.id) in sqlguild.anarchies:
-                sqlguild.anarchies.append(str(ctx.channel.id)) # Add the channel to the anarchy channels
-                await ctx.send("Woo! Anarchy... I guess..." + (" You know, as a moderation bot this is a rather weird thing to say..." if random.randint(1,25) == 25 else ""),ephemeral=True)
+            sqlguild, session = await get_sql_guild(interaction.guild_id) # Get the SQL Reference to the guild
+            if not str(interaction.channel_id) in sqlguild.anarchies:
+                sqlguild.anarchies.append(str(interaction.channel_id)) # Add the channel to the anarchy channels
+                await interaction.response.send_message("Woo! Anarchy... I guess..." + (" You know, as a moderation bot this is a rather weird thing to say..." if random.randint(1,25) == 25 else ""),ephemeral=True)
                 pass
             else:
-                await ctx.send("Hahaha! This is anarchy! I don't have to listen to you anymore! (Anarchy is already enabled)",ephemeral=True)
+                await interaction.response.send_message("Hahaha! This is anarchy! I don't have to listen to you anymore! (Anarchy is already enabled)",ephemeral=True)
                 pass
             
             await session.commit()
         finally:
             await session.close()
+        asyncio.create_task(self.anarchy_sql_update(interaction))
         pass
 
-    @anarchy.command("disable",brief="(Re)includes this channel in the automod")
-    async def rem_anarchy(self, ctx : commands.Context):
+    @anarchy.command(name="disable",description="(Re)includes this channel in the automod")
+    async def rem_anarchy(self, interaction: discord.Interaction):
         try:
-            sqlguild, session = await get_sql_guild(ctx.guild.id) # Get SQL Reference to the guild
-            if str(ctx.channel.id) in sqlguild.anarchies:
-                sqlguild.anarchies.remove(str(ctx.channel.id))
-                await ctx.send("Alright, anarchy is disabled now. No, put that axe away; I said it is **disabled** now.",ephemeral=True)
+            sqlguild, session = await get_sql_guild(interaction.guild_id) # Get SQL Reference to the guild
+            if str(interaction.channel_id) in sqlguild.anarchies:
+                sqlguild.anarchies.remove(str(interaction.channel_id))
+                await interaction.response.send_message("Alright, anarchy is disabled now. No, put that axe away; I said it is **disabled** now.",ephemeral=True)
                 pass
             else:
-                await ctx.send("But... there isn't any anarchy here, what should I do now?",ephemeral=True)
+                await interaction.response.send_message("But... there isn't any anarchy here, what should I do now?",ephemeral=True)
                 pass
 
             await session.commit()
         finally:
             await session.close() # Commit & Close
+        asyncio.create_task(self.anarchy_sql_update(interaction))
         pass
 
-    @anarchy.command("list",brief="List all anarchy channels on this server")
-    async def list_anarchy(self, ctx : commands.Context):
+    @anarchy.command(name="list",description="List all anarchy channels on this server")
+    async def list_anarchy(self, interaction: discord.Interaction):
         try:
-            sqlguild, session = await get_sql_guild(ctx.guild.id) # Get SQL Reference to the guild
+            sqlguild, session = await get_sql_guild(interaction.guild_id) # Get SQL Reference to the guild
             
             embed = discord.Embed(title="Anarchy channels",colour=discord.Colour.blue(),description="")
             for channel_str in sqlguild.anarchies: # List every anarchy channel in the embed description
-                channel = ctx.guild.get_channel(int(channel_str))
+                channel = interaction.guild.get_channel(int(channel_str))
                 embed.description = "".join((embed.description,channel.mention,"\n"))
                 pass
         finally:
             await session.close()
 
-        await ctx.send(embed=embed,ephemeral=True)
+        await interaction.response.send_message(embed=embed,ephemeral=True)
+        pass
+
+    async def anarchy_sql_update(self,interaction: discord.Interaction):
+        try:
+            sqlguild, session = await get_sql_guild(interaction.guild_id)
+            # Remove all outdated channels (channels that were deleted)
+            all_channel_ids : list[ChannelId] = [channel.id for channel in interaction.guild.text_channels]
+
+            prev_anarchies = sqlguild.anarchies.copy()
+            sqlguild.anarchies.clear()
+            sqlguild.anarchies.extend(filter(lambda channel_str: int(channel_str) in all_channel_ids , prev_anarchies))
+            # Update the RAM dict with the anarchy channels
+            self.ANARCHIES.setdefault(interaction.guild_id,set())
+            self.ANARCHIES[interaction.guild_id].clear()
+            self.ANARCHIES[interaction.guild_id].update([int(channel_str) for channel_str in sqlguild.anarchies])
+
+            await session.commit()
+        finally:
+            await session.close() # Commit & Close
         pass
 
     # Message Mod
-    @commands.command("move",brief="Move a specified amount of messages to a specified channel")
-    @commands.guild_only()
+    @app_commands.command(name="move",description="Move a specified amount of messages to a specified channel")
+    @app_commands.guild_only()
+    @app_commands.describe(messages="The amount of messages to move. This is capped at 100")
     @utils.perm_message_check("You don't seem to have the right tools to lift these messages... (No Permission)",manage_messages=True)
-    async def move_messages(self, ctx : commands.Context, channel : discord.TextChannel, messages : int = Option(description="The amount of messages to move. This is capped at 100")):
-        if channel == ctx.channel:
-            await ctx.send("Now that would be pretty silly... (Channel is same as current)",ephemeral=True)
+    async def move_messages(self, interaction: discord.Interaction, channel : discord.TextChannel, messages : int):
+        if channel.id == interaction.channel_id:
+            await interaction.response.send_message("Now that would be pretty silly... (Channel is same as current)",ephemeral=True)
             return
             pass
         messages = min(messages,CONFIG.MSG_MOVE_LIM)
 
         message_contents = [""]
         
-        all_messages = [message async for message in ctx.channel.history(limit=messages)]
+        all_messages = [message async for message in interaction.channel.history(limit=messages)]
         all_messages.reverse()
         for message in all_messages:
             message : discord.Message
@@ -796,8 +796,8 @@ class Moderation(commands.Cog):
                 pass
             pass
 
-        if not channel.permissions_for(ctx.me).is_superset(discord.Permissions(send_messages=True)):
-            await ctx.send("I am unable to send messages in the channel you specified. Please use a different channel or change the permissions of the selected channel to fix this issue.",ephemeral=True)
+        if not channel.permissions_for(interaction.guild.me).is_superset(discord.Permissions(send_messages=True)):
+            await interaction.response.send_message("I am unable to send messages in the channel you specified. Please use a different channel or change the permissions of the selected channel to fix this issue.",ephemeral=True)
             return
             pass
 
@@ -807,144 +807,155 @@ class Moderation(commands.Cog):
                 pass
             pass
 
-        await asyncio.gather(send_msgs(),ctx.channel.purge(limit=messages))
-        await ctx.send(f"This conversation has been moved to {channel.mention}")
+        await asyncio.gather(send_msgs(),interaction.channel.purge(limit=messages))
+        await interaction.response.send_message(f"This conversation has been moved to {channel.mention}")
         pass
 
-    @commands.command("purge",brief="Remove a specified amount of messages in this channel")
-    @commands.guild_only()
+    @app_commands.command(name="purge",description="Remove a specified amount of messages in this channel")
+    @app_commands.guild_only()
     @utils.perm_message_check("Now, these are some pretty destructive weapons. Wouldn't want them to fall into the wrong hands, eh? (No Permission)",manage_messages=True)
-    async def purge_messages(self, ctx : commands.Context, messages : int):
+    async def purge_messages(self, interaction: discord.Interaction, messages : int):
         messages = min(messages,CONFIG.MSG_PURGE_LIM)
-        await ctx.channel.purge(limit=messages)
+        await interaction.channel.purge(limit=messages)
 
-        await ctx.send(f"Deleted {messages} message(s)! :white_check_mark:",ephemeral=True)
+        await interaction.response.send_message(f"Deleted {messages} message(s)! :white_check_mark:",ephemeral=True)
         pass
 
     ## Role exceptions
-    @commands.group("god_roles",brief="Users with a god role will not be affected by any automod checks")
-    @utils.perm_message_check("2 things: \n\t1. You're not a god\n\t2. You won't be able to make yourself one with this\n\t2.1 No Permission",manage_guild=True)
-    async def god_roles(self, ctx):
-        pass
+    # @utils.perm_message_check("2 things: \n\t1. You're not a god\n\t2. You won't be able to make yourself one with this\n\t2.1 No Permission",manage_guild=True)
+    god_roles = app_commands.Group(name="god_roles",description="Users with a god role will not be affected by any automod checks",
+    guild_only=True, default_permissions=discord.Permissions(manage_guild=True))
 
-    @god_roles.command("add",brief="Add a new role to the list of roles exempted from the automod")
-    async def god_roles_add(self, ctx : commands.Context, role : discord.Role):
-        if str(role.id) in self.GOD_ROLES[ctx.guild.id]:
-            await ctx.send(f"Just as a check, I sent a prayer to `{role.name}` and I actually got an answer... So, yeah, that role already is a god role",ephemeral=True)
+    @god_roles.command(name="add",description="Add a new role to the list of roles exempted from the automod")
+    async def god_roles_add(self, interaction: discord.Interaction, role : discord.Role):
+        if str(role.id) in self.GOD_ROLES[interaction.guild_id]:
+            await interaction.response.send_message(f"Just as a check, I sent a prayer to `{role.name}` and I actually got an answer... So, yeah, that role already is a god role",ephemeral=True)
             return
             pass
 
-        self.GOD_ROLES[ctx.guild.id].add(str(role.id))
+        self.GOD_ROLES[interaction.guild_id].add(str(role.id))
 
         session : asql.AsyncSession = SESSION_FACTORY()
         try:
-            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id==str(ctx.guild.id)))
+            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id==str(interaction.guild_id)))
             sql_guild : Guild = result.scalar_one()
             sql_guild.god_roles.append(str(role.id))
             await session.commit()
         finally:
             await session.close()
 
-        await ctx.send(f"All hail {role.mention} or something... Anyway, that role is now a god role!",ephemeral=True)
+        await interaction.response.send_message(f"All hail {role.mention} or something... Anyway, that role is now a god role!",ephemeral=True)
         pass
 
-    @god_roles.command("remove",brief="Remove a role from the list of roles exempted from the automod")
-    async def god_roles_rem(self, ctx : commands.Context, role : discord.Role):
-        if str(role.id) not in self.GOD_ROLES[ctx.guild.id]:
-            await ctx.send(f"Who is this `{role.name}` you are talking about? Not a god at least...",ephemeral=True)
+    @god_roles.command(name="remove",description="Remove a role from the list of roles exempted from the automod")
+    async def god_roles_rem(self, interaction: discord.Interaction, role : discord.Role):
+        if str(role.id) not in self.GOD_ROLES[interaction.guild_id]:
+            await interaction.response.send_message(f"Who is this `{role.name}` you are talking about? Not a god at least...",ephemeral=True)
             return
             pass
 
-        self.GOD_ROLES[ctx.guild.id].remove(str(role.id))
+        self.GOD_ROLES[interaction.guild_id].remove(str(role.id))
 
         session : asql.AsyncSession = SESSION_FACTORY()
         try:
-            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id==str(ctx.guild.id)))
+            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id==str(interaction.guild_id)))
             sql_guild : Guild = result.scalar_one()
             sql_guild.god_roles.remove(str(role.id))
             await session.commit()
         finally:
             await session.close()
 
-        await ctx.send("So what is this called? Let me just check... A, yes! Deicide, that's it!",ephemeral=True)
+        await interaction.response.send_message("So what is this called? Let me just check... A, yes! Deicide, that's it!",ephemeral=True)
         pass
 
-    @god_roles.command("list",brief="List all roles exempted from the automod")
-    async def god_roles_list(self, ctx : commands.Context):
-        view = GodRoleView(ctx,self,timeout=CONFIG.EDIT_TIMEOUT)
-        message = await ctx.send("```\nSelect one of the options or disable the interaction```",view=view,ephemeral=True)
+    @god_roles.command(name="list",description="List all roles exempted from the automod")
+    async def god_roles_list(self, interaction: discord.Interaction):
+        logging.warn(NotImplementedError("Implement modals for GodRoleView interactions"))
+        view = GodRoleView(interaction,self,timeout=CONFIG.EDIT_TIMEOUT)
+        await interaction.response.defer(ephemeral=True,thinking=False)
+        message = await interaction.followup.send("```\nSelect one of the options or disable the interaction```",view=view,ephemeral=True)
         view.message = message
         await view.update_embed()
         pass
 
     # Logging
-    @commands.group("logging")
-    @utils.perm_message_check("Now, there is something called privacy, you know? I know, it's a bit ironical considering this command's function, but that doesn't mean you get to do this! (No Permission)",manage_guild=True)
-    async def logging(self, ctx): 
-        pass
+    # @utils.perm_message_check("Now, there is something called privacy, you know? I know, it's a bit ironical considering this command's function, but that doesn't mean you get to do this! (No Permission)",manage_guild=True)
+    logging= app_commands.Group(name="logging",description="Moderate the logging feature",
+    guild_only=True, default_permissions=discord.Permissions(manage_guild=True))
 
-    @logging.command("channel",brief="Set the channel the logger will write to.")
-    async def set_log_channel(self, ctx : commands.Context, channel : discord.TextChannel = Option(None,description="The channel to log events in. Leave empty to reset")):
+    @logging.command(name="channel",description="Set the channel the logger will write to.")
+    @app_commands.describe(channel="The channel to log events in. Leave empty to reset")
+    async def set_log_channel(self, interaction: discord.Interaction, channel : discord.TextChannel = None):
         if channel is not None and not isinstance(channel,discord.TextChannel):
-            await ctx.send("The channel you passed does not seem to be a text channel. Please check your input",ephemeral=True)
+            await interaction.response.send_message("The channel you passed does not seem to be a text channel. Please check your input",ephemeral=True)
             return
             pass
 
         session : asql.AsyncSession = SESSION_FACTORY()
         try:
-            await session.execute(sql.update(Guild).where(Guild.id==str(ctx.guild.id)).values(logging_channel=(str(channel.id) if channel is not None else None)))
+            await session.execute(sql.update(Guild).where(Guild.id==str(interaction.guild_id)).values(logging_channel=(str(channel.id) if channel is not None else None)))
             await session.commit()
         finally:
             await session.close()
 
-        self.LOGGING_CHANNEL[ctx.guild.id] = (channel.id if channel is not None else None)
+        self.LOGGING_CHANNEL[interaction.guild_id] = (channel.id if channel is not None else None)
 
         if channel is None:
-            await ctx.send("Logging is now disabled! Freedom! Yay!",ephemeral=True)
+            await interaction.response.send_message("Logging is now disabled! Freedom! Yay!",ephemeral=True)
             pass
         else:
-            await ctx.send("Logging is now enabled! Finally we can know what everyone on the server is doing! This... sounded better in my head",ephemeral=True)
+            await interaction.response.send_message("Logging is now enabled! Finally we can know what everyone on the server is doing! This... sounded better in my head",ephemeral=True)
             pass
         pass
 
-    @logging.command("events",brief="Specify the events in which a log entry will be made")
-    async def specify_log_events(self, ctx : commands.Context,
-        moderation         : bool = Option(None, description="Set to true to enable logging of Automod or member kicks/bans"),
+    @logging.command(name="events",description="Specify the events in which a log entry will be made")
+    @app_commands.describe(
+        moderation="Set to true to enable logging of Automod or member kicks/bans",
+        channels="Set to true to log changes to channels (creation, deletion, etc.)",
+        server_update="Set to true to log changes regarding the server",
+        invites="Set to true to log edited invites",
+        member_changes="Set to true to log changes to the members (like joining, leaving or nickname changes)",
+        messages="Set to true to log message changes (deletion/edits)",
+        reactions_mod="Set to true to log moderation for reactions (reaction clears)",
+        roles="Set to true to log changes to the roles of this server",
+        threads_mod="Set to true to log changes to threads"
+    )
+    async def specify_log_events(self, interaction: discord.Interaction,
+        moderation         : bool = None,
 
-        channels            : bool = Option(None, description="Set to true to log changes to channels (creation, deletion, etc.)"),
+        channels            : bool = None,
         
-        server_update       : bool = Option(None, description="Set to true to log changes regarding the server"),                                       # <-
-        # server_update       : bool = Option(None, description="Set to true to log changes to the server settings"),
-        # emoji_update        : bool = Option(None, description="Set to true to log the addition or removal of server emojis"),
-        # sticker_update      : bool = Option(None, description="Set to true to log the addition or removal of server stickers"),
+        server_update       : bool = None,
 
-        invites             : bool = Option(None, description="Set to true to log edited invites"),
+        invites             : bool = None,
 
-        member_changes      : bool = Option(None, description="Set to true to log changes to the members (like joining, leaving or nickname changes"),
+        member_changes      : bool = None,
 
-        messages            : bool = Option(None, description="Set to true to log message changes (deletion/edits)"),
+        messages            : bool = None,
         
-        reactions_mod       : bool = Option(None, description="Set to true to log moderation for reactions (reaction clears)"),
+        reactions_mod       : bool = None,
         
-        roles               : bool = Option(None, description="Set to true to log changes to the roles of this server"),
+        roles               : bool = None,
         
-        threads_mod         : bool = Option(None, description="Set to true to log changes to threads"),
+        threads_mod         : bool = None,
         ):
+        await interaction.response.defer(ephemeral=True,thinking=False)
+
         args = (moderation, channels, server_update, invites, member_changes, messages, reactions_mod, roles, threads_mod)
-        self.LOGGING_SETTINGS[ctx.guild.id].update(*args)
+        self.LOGGING_SETTINGS[interaction.guild_id].update(*args)
 
         session : asql.AsyncSession = SESSION_FACTORY()
         try:
-            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(ctx.guild.id)))
+            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(interaction.guild_id)))
             sqlobj : Guild = result.scalar_one_or_none()
-            if sqlobj is not None: sqlobj.logging_settings = self.LOGGING_SETTINGS[ctx.guild.id].to_value()
+            if sqlobj is not None: sqlobj.logging_settings = self.LOGGING_SETTINGS[interaction.guild_id].to_value()
 
             await session.commit()
         finally:
             await session.close()
 
-        view = LoggingSettingsView(ctx,self,timeout=CONFIG.EDIT_TIMEOUT)
-        message = await ctx.send("```\nFirst select whether you wish to enable or disable an event\nand then use the select menu to specify the event```",view=view,ephemeral=True)
+        view = LoggingSettingsView(interaction,self,timeout=CONFIG.EDIT_TIMEOUT)
+        message = await interaction.followup.send("```\nFirst select whether you wish to enable or disable an event\nand then use the select menu to specify the event```",view=view,ephemeral=True)
         view.message = message
         await view.update_message()
         pass
@@ -1010,15 +1021,8 @@ class Moderation(commands.Cog):
             await session.close()
         pass
 
-    @commands.Cog.listener("on_ready")
-    async def task_creator(self):
-        asyncio.create_task(logger_task())
-        pass
-
     # Logging Event handlers ----------------------------------------
     # What? This isn't long! It's remarkably short! (Kind of...)
-    @commands.Cog.listener("on_ready")
-    @utils.call_once_async
     async def logging_creator(self):
         def check_event_logging_enabled(guild : discord.Guild, event_type : int) -> bool:
             if self.LOGGING_CHANNEL.get(guild.id) is None: return False
@@ -1117,7 +1121,7 @@ async def setup(bot : commands.Bot):
     BOT.DATA.LOGGING_SETTINGS   = {}
 
     COG = Moderation()
-    bot.add_cog(COG)
+    await bot.add_cog(COG)
 
     logging.info("Added moderation extension")
     pass
@@ -1515,7 +1519,6 @@ def insert_server_settings_update(embed : discord.Embed, before : discord.Guild,
     standard("Server Discovery Language","preferred_locale")
     standard("Nitro Booster Role","premium_subscriber_role")
     standard("Boost Tier","premium_tier")
-    standard("Voice Channel Region","region")
     standard("Rules Channel","rules_channel")
     standard_asset("Invite Splash Picture","splash")
     if different("verification_level"):
