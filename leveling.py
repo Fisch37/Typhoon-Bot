@@ -185,6 +185,9 @@ class Leveling(commands.Cog):
 
     def __init__(self):
         super().__init__()
+        pass
+
+    async def cog_load(self):
         self.sql_saver_task.start()
         self.leveling_collector.start()
         pass

@@ -487,14 +487,14 @@ class Moderation(commands.Cog):
         self.__class__.AUTOMOD_SETTINGS   = BOT.DATA.AUTOMOD_SETTINGS
         self.__class__.LOGGING_SETTINGS   = BOT.DATA.LOGGING_SETTINGS
         super().__init__()
-
-        self.warn_archive_task.start()
         pass
 
     async def cog_unload(self):
+        self.warn_archive_task.stop()
         pass
 
     async def cog_load(self):
+        self.warn_archive_task.start()
         asyncio.create_task(logger_task())
         asyncio.create_task(self.logging_creator())
         pass
