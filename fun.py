@@ -11,27 +11,27 @@ import sqlalchemy.ext.asyncio as asql
 from ormclasses import * # Also imports a whole bunch of stuff
 from sqlalchemy.engine.cursor import CursorResult
 
-CONFIG : config.Config = ...
+CONFIG: config.Config = ...
 
-BOT : commands.Bot = ...
-WEBHOOK_POOL : utils.WebhookPool = ...
+BOT: commands.Bot = ...
+WEBHOOK_POOL: utils.WebhookPool = ...
 
-ENGINE : asql.AsyncEngine = ...
-SESSION_FACTORY : Sessionmaker
+ENGINE: asql.AsyncEngine = ...
+SESSION_FACTORY: Sessionmaker
 
 class Fun(commands.Cog):
     """Includes a small amount of unproductive commands"""
     # Cloning
-    CLONE_STATES : dict[int,dict[int,bool]] = {}
-    CLONE_OVERRIDES : dict[int,list[bool,dict[int,bool]]] = {}
+    CLONE_STATES: dict[int,dict[int,bool]] = {}
+    CLONE_OVERRIDES: dict[int,list[bool,dict[int,bool]]] = {}
 
     @app_commands.command(description="Enable/Disable your clone")
     @app_commands.guild_only()
-    async def clone(self, interaction: discord.Interaction, state : bool):
+    async def clone(self, interaction: discord.Interaction, state: bool):
         async with SESSION_FACTORY() as session:
-            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id==str(interaction.guild_id)))
+            result: CursorResult = await session.execute(sql.select(Guild).where(Guild.id==str(interaction.guild_id)))
             
-            guildObj : Guild = result.scalar_one_or_none()
+            guildObj: Guild = result.scalar_one_or_none()
             if guildObj is None: # If there is no data, there is no cloning
                 isEnabled = False
             else:
@@ -57,12 +57,12 @@ class Fun(commands.Cog):
 
     ## Manage clones
 
-    manage_clones= app_commands.Group(name="manage_clones",description="Configuration for the clone system",guild_only=True)
+    manage_clones = app_commands.Group(name="manage_clones",description="Configuration for the clone system",guild_only=True)
 
     @manage_clones.command(name="enable",description="Completely enable/disable clones")
     @app_commands.guild_only()
     @app_commands.describe(state="Whether or not cloning should be enabled")
-    async def set_clone_mode(self, interaction: discord.Interaction, state : bool= True):
+    async def set_clone_mode(self, interaction: discord.Interaction, state: bool=True):
         if not interaction.user.guild_permissions.is_superset(discord.Permissions(manage_guild=True)):
             await interaction.response.send_message("You do not have permission for this command",ephemeral=True)
             return
@@ -92,15 +92,15 @@ class Fun(commands.Cog):
         pass
 
     
-    manage_clones_filter= app_commands.Group(name="filter", description="Filter who may use the clone feature and where",parent=manage_clones,guild_only=True)
+    manage_clones_filter = app_commands.Group(name="filter", description="Filter who may use the clone feature and where",parent=manage_clones,guild_only=True)
     
     @manage_clones_filter.command(name="set",description="Overrides the default clone setting for this channel")
     @app_commands.describe(state="Whether cloning should be enabled or disabled in this channel")
     @app_commands.guild_only
     @utils.perm_message_check("Sorry, but this action is only for the lab administrators (i.e. No Permission [need Manage Channel])\nhttps://tenor.com/view/no-i-dont-think-i-will-captain-america-old-capt-gif-17162888",manage_channels=True)
-    async def set_clone_filter(self, interaction: discord.Interaction, state : bool):
+    async def set_clone_filter(self, interaction: discord.Interaction, state: bool):
         async with SESSION_FACTORY() as session:
-            result : CursorResult = await session.execute(
+            result: CursorResult = await session.execute(
                 sql.select(Guild)\
                 .where(Guild.id == str(interaction.guild_id))
             ) # Get the current guild from the SQL Table
@@ -126,8 +126,8 @@ class Fun(commands.Cog):
     @utils.perm_message_check("Sorry, this room is reserved for lab administrators only (No Permission [need Manage Channel])", manage_channels=True)
     async def rem_clone_filter(self, interaction: discord.Interaction):
         async with SESSION_FACTORY() as session:
-            result : CursorResult = await session.execute(sql.select(Guild.clone_filter).where(Guild.id == str(interaction.guild_id)))
-            clone_filter : dict = result.scalar_one_or_none()
+            result: CursorResult = await session.execute(sql.select(Guild.clone_filter).where(Guild.id == str(interaction.guild_id)))
+            clone_filter: dict = result.scalar_one_or_none()
 
             if clone_filter is None: # Add new guild obj if it doesn't exist yet
                 sqlGuild = Guild(id=str(interaction.guild_id))
@@ -158,17 +158,17 @@ class Fun(commands.Cog):
     @utils.perm_message_check("Oi! This data's classified! (No Permission [need Manage Channel])",manage_channels=True)
     async def show_clone_filter(self, interaction: discord.Interaction):
         async with SESSION_FACTORY() as session:
-            filterResult : CursorResult = await session.execute(
+            filterResult: CursorResult = await session.execute(
                 sql.select(Guild.clone_filter)\
                 .where(Guild.id == str(interaction.guild_id))
             ) # Get all channel overrides
-            isEnabled : Optional[bool] = (await session.execute(
+            isEnabled: Optional[bool] = (await session.execute(
                 sql.select(Guild.clone_enabled)\
                 .where(Guild.id == str(interaction.guild_id)))
             ).scalar_one_or_none() # Get if cloning is currently enabled
             pass
         
-        cloneOverride : dict = filterResult.scalar_one_or_none() # Assemble channel overrides into a dict
+        cloneOverride: dict = filterResult.scalar_one_or_none() # Assemble channel overrides into a dict
         if cloneOverride is None:
             cloneOverride = {}
             pass
@@ -188,7 +188,7 @@ class Fun(commands.Cog):
                 pass
             pass
         # Create new sorted channel override dictionary
-        ordered_channel_overrides : OrderedDict[discord.TextChannel,bool] = OrderedDict()
+        ordered_channel_overrides: OrderedDict[discord.TextChannel,bool] = OrderedDict()
         for channel in sorted(channel_overrides,key=lambda key: key.position):
             ordered_channel_overrides[channel] = channel_overrides[channel]
             pass
@@ -204,7 +204,7 @@ class Fun(commands.Cog):
         pass
 
     @commands.Cog.listener("on_message")
-    async def clone_listener(self, msg : discord.Message):
+    async def clone_listener(self, msg: discord.Message):
         if msg.guild is None or msg.author.bot: return # Do not catch private messages or bot messages
 
         self.CLONE_STATES.setdefault(msg.guild.id,{}) # Make sure that there is dictionary for the current guild
@@ -215,13 +215,13 @@ class Fun(commands.Cog):
         self.CLONE_OVERRIDES.setdefault(msg.guild.id,[None,None])
         if self.CLONE_OVERRIDES[msg.guild.id][0] is None:
             async with SESSION_FACTORY() as session:
-                result : CursorResult = await session.execute(sql.select(Guild.clone_enabled).where(Guild.id == str(msg.guild.id)))
+                result: CursorResult = await session.execute(sql.select(Guild.clone_enabled).where(Guild.id == str(msg.guild.id)))
                 self.CLONE_OVERRIDES[msg.guild.id][0] = bool(result.scalar_one_or_none()) # Save clone_enabled in RAM (False if not in database)
             pass
 
         if self.CLONE_OVERRIDES[msg.guild.id][1] is None:
             async with SESSION_FACTORY() as session:
-                result : CursorResult = await session.execute(sql.select(Guild.clone_filter).where(Guild.id == str(msg.guild.id)))
+                result: CursorResult = await session.execute(sql.select(Guild.clone_filter).where(Guild.id == str(msg.guild.id)))
                 try:
                     self.CLONE_OVERRIDES[msg.guild.id][1] = dict(result.scalar_one()) # Retrieve overrides
                     pass
@@ -241,19 +241,19 @@ class Fun(commands.Cog):
     
     # Hehe, Tableshrug
     @app_commands.command(name="tableshrug",description="Send a message with a tableshrug appended (┻━┻¯\_(ツ)_/¯┻━┻)")
-    async def tableshrug(self, interaction: discord.Interaction, message : str = ""):
+    async def tableshrug(self, interaction: discord.Interaction, message: str=""):
         webhook = await WEBHOOK_POOL.get(interaction.channel,reason="Tableshrug!")
         await webhook.send(message + " ┻━┻¯\_(ツ)_/¯┻━┻",username=interaction.user.display_name,avatar_url=interaction.user.avatar.url)
         await interaction.response.send_message("Message sent! (Well, obviously)",ephemeral=True)
         pass
 
     # GIF related stuff
-    PATPATS : list[str] = []
-    CUDDLES : list[str] = []
+    PATPATS: list[str] = []
+    CUDDLES: list[str] = []
 
     @app_commands.command(name="passtheburrito",description="Passes the burrito (or multiple, actually)")
     @app_commands.describe(amount="The amount of burritos to pass (max 10)")
-    async def passtheburrito(self, interaction: discord.Interaction, amount: int= 1):
+    async def passtheburrito(self, interaction: discord.Interaction, amount: int=1):
         await interaction.response.defer()
 
         amount = min(amount,CONFIG.MAX_BURRITOS)
@@ -263,7 +263,7 @@ class Fun(commands.Cog):
         pass
 
 
-    def assembleCuddle(self,author : discord.Member,target : discord.Member, comment : str = None,is_response : bool = False) -> discord.Embed:
+    def assembleCuddle(self,author: discord.Member,target: discord.Member, comment: str = None,is_response: bool = False) -> discord.Embed:
         embed = discord.Embed(
             type="gifv",
             colour=author.colour,
@@ -293,7 +293,7 @@ class Fun(commands.Cog):
         return embed
         pass
 
-    def assemblePatpat(self, author : discord.Member, target : discord.Member, comment : str = None, is_response : bool = False) -> discord.Embed:
+    def assemblePatpat(self, author: discord.Member, target: discord.Member, comment: str=None, is_response: bool=False) -> discord.Embed:
         embed = discord.Embed(
             type="gifv",
             colour=author.colour,
@@ -329,12 +329,12 @@ class Fun(commands.Cog):
     async def patpat(
         self, 
         interaction: discord.Interaction, 
-        target : discord.Member, 
-        comment : str = None
+        target: discord.Member, 
+        comment: str = None
         ):
         await interaction.response.defer()
 
-        message : discord.Message = ...
+        message: discord.Message = ...
 
         class ResponseView(discord.ui.View):
             async def on_timeout(self) -> None:
@@ -342,7 +342,7 @@ class Fun(commands.Cog):
                 pass
 
             @discord.ui.button(label=f"Respond to {interaction.user.display_name}",style=discord.ButtonStyle.green)
-            async def respond(view, vinteraction : discord.Interaction, button : discord.ui.Button):
+            async def respond(view, vinteraction: discord.Interaction, button: discord.ui.Button):
                 if vinteraction.user != target: # Only allow response for target
                     return
                     pass
@@ -369,12 +369,12 @@ class Fun(commands.Cog):
     async def cuddle(
         self, 
         interaction: discord.Interaction,
-        target : discord.Member, 
-        comment : str = None
+        target: discord.Member, 
+        comment: str=None
         ): 
         await interaction.response.defer()
 
-        message : discord.WebhookMessage = ...
+        message: discord.WebhookMessage = ...
 
         class ResponseView(discord.ui.View):
             async def on_timeout(self) -> None:
@@ -382,7 +382,7 @@ class Fun(commands.Cog):
                 pass
 
             @discord.ui.button(label=f"Hug {interaction.user.display_name} back",style=discord.ButtonStyle.green)
-            async def respond(view, vinteraction : discord.Interaction, button : discord.ui.Button):
+            async def respond(view, vinteraction: discord.Interaction, button: discord.ui.Button):
                 if interaction.user != target: # Only allow response for target
                     return
                     pass
@@ -403,7 +403,7 @@ class Fun(commands.Cog):
     pass
 
 
-async def setup(bot : commands.Bot):
+async def setup(bot: commands.Bot):
     global CONFIG
     global BOT, WEBHOOK_POOL
     global ENGINE, SESSION_FACTORY
@@ -414,7 +414,7 @@ async def setup(bot : commands.Bot):
     ENGINE          = bot.ENGINE
     SESSION_FACTORY = bot.SESSION_FACTORY
     # The rest
-    bot.DATA.CLONE_OVERRIDES= Fun.CLONE_OVERRIDES
+    bot.DATA.CLONE_OVERRIDES = Fun.CLONE_OVERRIDES
 
     await bot.add_cog(Fun())
 
@@ -428,6 +428,6 @@ async def setup(bot : commands.Bot):
     logging.info("Added fun extension")
     pass
 
-async def teardown(bot : commands.Bot):
+async def teardown(bot: commands.Bot):
     await bot.remove_cog("Fun")
     pass

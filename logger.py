@@ -8,7 +8,7 @@ Channel = Union[discord.TextChannel,discord.VoiceChannel,discord.StageChannel,di
 class Significance:
     LOW = discord.Colour.green()
     MID = discord.Colour.yellow()
-    HIGH= discord.Colour.red()
+    HIGH = discord.Colour.red()
 
 class Event:
     Mute    = dict[Literal["manual","member","reason","until","actor"],Union[bool,discord.Member,str,int]]
@@ -17,17 +17,17 @@ class Event:
     GuildChannel_Create = dict[Literal["channel"],Channel]
     GuildChannel_Delete = dict[Literal["channel"],Channel]
     GuildChannel_Update = dict[Literal["before"],Literal["after"]]
-    GuildSettings= dict[Literal["before","after"],discord.Guild]
-    EmojiUpdate  = dict[Literal["guild","before","after"],Union[discord.Guild,list[discord.Emoji]]]
-    EmojiUpdate  = dict[Literal["guild","before","after"],Union[discord.Guild,list[discord.Sticker]]]
-    Invite       = dict[Literal["invite"],discord.Invite]
-    Member_JL    = dict[Literal["member"],discord.Member]
-    Member_Update= dict[Literal["before","after"],discord.Member]
-    Message_Edit  = dict[Literal["payload"],discord.RawMessageUpdateEvent]
-    Message_Delete= dict[Literal["payload"],discord.RawMessageDeleteEvent]
-    Reaction_Clear= dict[Literal["message","reactions"],Union[discord.Message,list[Union[discord.Emoji,discord.PartialEmoji]]]]
-    Role          = dict[Literal["role"],discord.Role]
-    Role_Update   = dict[Literal["before","after"],discord.Role]
+    GuildSettings = dict[Literal["before","after"],discord.Guild]
+    EmojiUpdate = dict[Literal["guild","before","after"],Union[discord.Guild,list[discord.Emoji]]]
+    EmojiUpdate = dict[Literal["guild","before","after"],Union[discord.Guild,list[discord.Sticker]]]
+    Invite = dict[Literal["invite"],discord.Invite]
+    Member_JL = dict[Literal["member"],discord.Member]
+    Member_Update = dict[Literal["before","after"],discord.Member]
+    Message_Edit = dict[Literal["payload"],discord.RawMessageUpdateEvent]
+    Message_Delete = dict[Literal["payload"],discord.RawMessageDeleteEvent]
+    Reaction_Clear = dict[Literal["message","reactions"],Union[discord.Message,list[Union[discord.Emoji,discord.PartialEmoji]]]]
+    Role = dict[Literal["role"],discord.Role]
+    Role_Update = dict[Literal["before","after"],discord.Role]
     Thread_Update = dict[Literal["before","after"],discord.Thread]
     Thread_Delete = dict[Literal["thread"],discord.Thread]
 
@@ -90,19 +90,19 @@ class Event:
     MOD_MASK                = 0b100000000000000
 
     __slots__ = ("type","data", "guild")
-    def __init__(self, type : int, guild : discord.Guild, data):
+    def __init__(self, type: int, guild: discord.Guild, data):
         self.type = type
         self.data = data
         self.guild = guild
         pass
     pass
 
-LOGGING_EVENTS : list[Event] = []
-LOGGING_CHANNEL : dict[GuildId,Optional[int]] = []
+LOGGING_EVENTS: list[Event] = []
+LOGGING_CHANNEL: dict[GuildId,Optional[int]] = []
 
 
-def gen_permission_override_string(perm_overrides : dict[Union[discord.Role,discord.Member],discord.PermissionOverwrite]) -> str:
-    def state_to_str(state : Optional[bool]) -> str:
+def gen_permission_override_string(perm_overrides: dict[Union[discord.Role,discord.Member],discord.PermissionOverwrite]) -> str:
+    def state_to_str(state: Optional[bool]) -> str:
         if state is None: return ":heavy_minus_sign:"
         elif state is False: return ":x:"
         else: return ":white_check_mark:"
@@ -111,7 +111,7 @@ def gen_permission_override_string(perm_overrides : dict[Union[discord.Role,disc
     return "\n\n".join("".join((target.mention,"\n\t".join((perm+": "+state_to_str(state) for perm, state in override))) for target, override in perm_overrides.items()))
     pass
 
-def channel_extra_description(event_type : int,channel : Channel) -> str:
+def channel_extra_description(event_type: int,channel: Channel) -> str:
     if isinstance(channel  ,discord.TextChannel ): channel_type = "Text"
     elif isinstance(channel,discord.VoiceChannel): channel_type = "Voice"
     elif isinstance(channel,discord.StageChannel): channel_type = "Stage"
@@ -142,11 +142,11 @@ def channel_extra_description(event_type : int,channel : Channel) -> str:
     return "\n".join(lines)
     pass
 
-def add_logging_event(event : Event):
+def add_logging_event(event: Event):
     LOGGING_EVENTS.append(event)
     pass
 
-def assemble_logging_embed(type : str, significance : discord.Colour, member : discord.Member, actor : discord.Member, message : discord.Message = None, reason : str = None, extra_description : str = None) -> discord.Embed:
+def assemble_logging_embed(type: str, significance: discord.Colour, member: discord.Member, actor: discord.Member, message: discord.Message = None, reason: str = None, extra_description: str = None) -> discord.Embed:
     embed = discord.Embed(colour=significance,title=type,description="",timestamp=datetime.now())
     embed.set_footer(text=f"Issued by {actor.mention}",icon_url=actor.avatar.url)
     embed.set_author(name=member.name,icon_url=member.avatar.url)
@@ -162,13 +162,13 @@ def assemble_logging_embed(type : str, significance : discord.Colour, member : d
     return embed
     pass
 
-async def handle_event(event : Event):
+async def handle_event(event: Event):
     
-    log_channel_id : int = LOGGING_CHANNEL.get(event.guild.id)
+    log_channel_id: int = LOGGING_CHANNEL.get(event.guild.id)
     if log_channel_id is None: return # This shouldn't happen, but safety!
 
     if event.type & Event.AUTOMOD_MASK:
-        event_data : Event.Automod = event.data
+        event_data: Event.Automod = event.data
         if   event.type == Event.AUTOMOD_CAPS: type_str = "Capslock"
         elif event.type == Event.AUTOMOD_SPAM: type_str = "Spam"
         elif event.type == Event.AUTOMOD_EMOTE:type_str = "Emotespam"
@@ -181,7 +181,7 @@ async def handle_event(event : Event):
         elif event.type == Event.GUILD_CHANNEL_UPDATE: type_str = "Channel Updated"
         
         if event.type in (Event.GUILD_CHANNEL_CREATE,Event.GUILD_CHANNEL_DELETE):
-            channel : Channel = event.data["channel"]
+            channel: Channel = event.data["channel"]
             extra_description = channel_extra_description(event.type,channel)
             pass
 
@@ -190,11 +190,11 @@ async def handle_event(event : Event):
         pass
     else:
         if event.type == Event.UNMUTE_EVENT:
-            event_data : Event.Unmute = event.data
+            event_data: Event.Unmute = event.data
             embed = assemble_logging_embed("Unmute",Significance.HIGH,event_data["member"],event_data["actor"],None,event_data["reason"])
             pass
         elif event.type == Event.MUTE_EVENT:
-            event_data : Event.Mute = event.data
+            event_data: Event.Mute = event.data
             embed = assemble_logging_embed("Mute",Significance.HIGH,event_data["member"],event_data["actor"],None,event_data["reason"],f"Muted until <t:{event_data['until']}>")
             pass
         pass

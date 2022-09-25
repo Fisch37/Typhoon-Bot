@@ -3,9 +3,9 @@ from discord import app_commands
 import discord, asyncio
 from libs import utils
 
-BOT : commands.Bot = ...
+BOT: commands.Bot = ...
 
-def split_help(content : str) -> tuple[str]:
+def split_help(content: str) -> tuple[str]:
     messages = [""]
 
     lines = content.split("\n")
@@ -22,7 +22,7 @@ def split_help(content : str) -> tuple[str]:
     return tuple(messages)
     pass
 
-def help_command_call_struct(command : app_commands.Command) -> str:
+def help_command_call_struct(command: app_commands.Command) -> str:
     paramstring = ""
     for parameter in command.parameters:
         onestring = "".join(("<",parameter.display_name,">"))
@@ -37,7 +37,7 @@ def help_command_call_struct(command : app_commands.Command) -> str:
     return resp
     pass
 
-def help_from_cog(cog : commands.Cog) -> str:
+def help_from_cog(cog: commands.Cog) -> str:
     resp = f"```md\n# {cog.__cog_name__}\n{cog.description}\n"
     for command in cog.get_app_commands():
         if isinstance(command,app_commands.Group):
@@ -53,7 +53,7 @@ def help_from_cog(cog : commands.Cog) -> str:
     return "".join((resp,"```"))
     pass
 
-def help_from_group(command_group : discord.app_commands.Group) -> str:
+def help_from_group(command_group: discord.app_commands.Group) -> str:
     resp = f"{command_group.name}: {command_group.description}\n"
     for command in command_group.commands:
         command: app_commands.Group|app_commands.Command
@@ -107,8 +107,8 @@ def whole_help() -> str:
     return "".join(("```md\n",no_cogs_resp,"\n",all_cogs_resp,"```"))
     pass
 
-def searchCommands(matcher : str, current_guild: discord.Guild= None) -> set[app_commands.Command]:
-    all_commands= BOT.tree.get_commands()
+def searchCommands(matcher: str, current_guild: discord.Guild=None) -> set[app_commands.Command]:
+    all_commands = BOT.tree.get_commands()
     if current_guild is not None: 
         all_commands.extend(BOT.tree.get_commands(guild=current_guild))
     
@@ -117,10 +117,10 @@ def searchCommands(matcher : str, current_guild: discord.Guild= None) -> set[app
         all_commands))
     pass
 
-async def help(interaction : discord.Interaction, command_or_category : str = ""):
+async def help(interaction: discord.Interaction, command_or_category: str=""):
     await interaction.response.defer(ephemeral=True)
 
-    message : discord.WebhookMessage = ...
+    message: discord.WebhookMessage = ...
 
     class HelpView(discord.ui.View):
         @discord.ui.select(
@@ -128,7 +128,7 @@ async def help(interaction : discord.Interaction, command_or_category : str = ""
             options=[discord.SelectOption(label=name,description=cog.description,value=name,default=(command_or_category.strip().lower()==name.lower())) for name, cog in BOT.cogs.items()] + [discord.SelectOption(label="All",value="__everything__",description="List help for every category (Note: This will send new messages)")],
             row=0
         )
-        async def cog_select(self : discord.ui.View,vinteraction : discord.Interaction, select : discord.ui.Select):
+        async def cog_select(self: discord.ui.View,vinteraction: discord.Interaction, select: discord.ui.Select):
             await vinteraction.response.defer(ephemeral=True)
             
             selected_cog = vinteraction.data.get("values")[0] # Get name of selected cog from interaction
@@ -147,17 +147,17 @@ async def help(interaction : discord.Interaction, command_or_category : str = ""
             pass
 
         @discord.ui.button(label="Search for command",style=discord.ButtonStyle.primary,row=1)
-        async def search_for_command(self : discord.ui.View, vinteraction : discord.Interaction, button : discord.ui.Button):
+        async def search_for_command(self: discord.ui.View, vinteraction: discord.Interaction, button: discord.ui.Button):
             await vinteraction.response.send_message("This function is not yet implemented and will be so in the future using modals", ephemeral=True)
             raise NotImplementedError("This function is not yet implemented and will be so in the future using modals")
-            select : discord.ui.Select = self.children[0] # Get select menu from message components
+            select: discord.ui.Select = self.children[0] # Get select menu from message components
             button.disabled = True # Disable button
             select.disabled = True # Disable select menu
 
             await message.edit(content="```\nPlease type in a command search (send a message)\nUse ? as a one character wildcard\nand * as a multi character wildcard```",view=self)
             await vinteraction.response.defer()
 
-            searchMsg : discord.Message = await BOT.wait_for("message",check=lambda msg: msg.author.id == interaction.user.id and msg.channel == interaction.channel) # Wait for a reply from the user
+            searchMsg: discord.Message = await BOT.wait_for("message",check=lambda msg: msg.author.id == interaction.user.id and msg.channel == interaction.channel) # Wait for a reply from the user
             await searchMsg.delete() # Delete the reply to prevent the help command from getting thrown to high up
 
             loop = asyncio.get_event_loop()
@@ -212,7 +212,7 @@ async def help(interaction : discord.Interaction, command_or_category : str = ""
     else:
         msg_content = "```\nPlease select from the menu below```"
 
-    message : discord.WebhookMessage = await interaction.followup.send(msg_content,view=view,ephemeral=True)
+    message: discord.WebhookMessage = await interaction.followup.send(msg_content,view=view,ephemeral=True)
     pass
 
 

@@ -5,8 +5,8 @@ from ormclasses import *
 import asyncio
 from typing import Optional
 
-SESSION_FACTORY : Sessionmaker = ...
-BOT : commands.Bot = ...
+SESSION_FACTORY: Sessionmaker = ...
+BOT: commands.Bot = ...
 CONFIG_FILE = "config.cfg"
 
 MESSAGE = """Test"""
@@ -14,8 +14,8 @@ if len(MESSAGE) == 0: raise RuntimeError("Don't forget to actually attach a mess
 
 loop = asyncio.new_event_loop()
 
-async def send_single(guild : discord.Guild, channel_id : Optional[int]):
-    channel : discord.TextChannel = None
+async def send_single(guild: discord.Guild, channel_id: Optional[int]):
+    channel: discord.TextChannel = None
     if channel_id is not None:
         try:
             channel = guild.get_channel(channel_id) or await guild.fetch_channel(channel_id)
@@ -32,9 +32,9 @@ async def send_single(guild : discord.Guild, channel_id : Optional[int]):
 @tasks.loop(count=1,loop=loop)
 async def send_announcement():
     print("Sending out announcements now...")
-    session : asql.AsyncSession = SESSION_FACTORY()
+    session: asql.AsyncSession = SESSION_FACTORY()
     try:
-        result : CursorResult = await session.execute(sql.select(Guild))
+        result: CursorResult = await session.execute(sql.select(Guild))
         announcement_overrides = {int(guild.id):guild.announcement_override for guild in result.scalars()}
 
         aws = set()
@@ -70,7 +70,7 @@ def main():
     ENGINE = asql.create_async_engine(CONFIG.DB_URL[1:-1],echo=False)
     async def async_metacreate(): # Create all tables to make sure that they actually... exist
         async with ENGINE.begin() as conn:
-            conn : asql.AsyncConnection
+            conn: asql.AsyncConnection
             await conn.run_sync(Base.metadata.create_all)
             pass
         pass

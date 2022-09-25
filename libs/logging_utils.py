@@ -16,29 +16,29 @@ class LoggingSettings:
     )
 
     def __init__(self, 
-        moderation          : bool = False, 
-        channels            : bool = False, 
-        server_update       : bool = False,
-        invites             : bool = False,
-        #integrations        : bool = False,
-        member_changes      : bool = False,
-        messages            : bool = False,
-        # reactions           : bool = False,
-        reactions_mod       : bool = False,
-        roles               : bool = False,
-        # threads             : bool = False,
-        threads_mod         : bool = False
+        moderation    : bool=False, 
+        channels      : bool=False, 
+        server_update : bool=False,
+        invites       : bool=False,
+        #integrations   : bool=False,
+        member_changes: bool=False,
+        messages      : bool=False,
+        # reactions     : bool=False,
+        reactions_mod : bool=False,
+        roles         : bool=False,
+        # threads       : bool=False,
+        threads_mod   : bool=False
         ):
         self.moderation = self.channels = self.server_update = self.invites = self.member_changes = self.messages = self.reactions_mod = self.roles = self.threads_mod = False
         self.update(moderation,channels,server_update, invites, member_changes, messages, reactions_mod, roles, threads_mod)
         pass
 
     @classmethod
-    def from_value(cls, value : int):
+    def from_value(cls, value: int):
         return cls(*[bool(value & 2**n) for n in range(3,len(cls.__slots__)+3)])
         pass
 
-    def update(self,moderation : bool, channels : bool, server_update : bool, invites : bool, member_changes : bool, messages : bool, reactions_mod : bool, roles : bool, threads_mod : bool):
+    def update(self,moderation: bool, channels: bool, server_update: bool, invites: bool, member_changes: bool, messages: bool, reactions_mod: bool, roles: bool, threads_mod: bool):
         if moderation is not None: 
             self.moderation = bool(moderation)
         if channels is not None: 
@@ -73,13 +73,13 @@ class LoggingSettings:
     pass
 
 translation_table = {
-            "moderation" : "Moderation",
-            "channels" : "Channels",
-            "server_update" : "Server Update",
-            "invites" : "Invites",
-            "member_changes" : "Member Changes",
-            "messages" : "Messages",
-            "reactions_mod" : "Reactions Moderation",
-            "roles" : "Roles",
-            "threads_mod" : "Threads Moderation"
+            "moderation":"Moderation",
+            "channels":"Channels",
+            "server_update":"Server Update",
+            "invites":"Invites",
+            "member_changes":"Member Changes",
+            "messages":"Messages",
+            "reactions_mod":"Reactions Moderation",
+            "roles":"Roles",
+            "threads_mod":"Threads Moderation"
         }

@@ -21,14 +21,14 @@ from sqlalchemy.engine.cursor import CursorResult
 from sqlalchemy.exc import NoResultFound
 
 # Declare constants
-CONFIG : config.Config = ...
+CONFIG: config.Config = ...
 
-BOT : commands.Bot = ...
-WEBHOOK_POOL : utils.WebhookPool = ...
-COG : commands.Cog = ...
+BOT: commands.Bot = ...
+WEBHOOK_POOL: utils.WebhookPool = ...
+COG: commands.Cog = ...
 
-ENGINE : asql.AsyncEngine = ...
-SESSION_FACTORY : Sessionmaker = ...
+ENGINE: asql.AsyncEngine = ...
+SESSION_FACTORY: Sessionmaker = ...
 
 UserId = int
 MessageId = int
@@ -40,8 +40,8 @@ AvatarUrl = str
 MemberName = str
 ScheduledMessage = tuple[Timestamp,ChannelId,str,tuple[MemberName,AvatarUrl]]
 
-def text2Die(text : str) -> list[tuple[int,int]]:
-    interpreted : list[tuple[int,int]] = []
+def text2Die(text: str) -> list[tuple[int,int]]:
+    interpreted: list[tuple[int,int]] = []
     for die_desc in text.split("+"): # Split dies up (E.g. 5d10+3d6 => [5d10,3d6])
         strN, strD = die_desc.split("d") # Get n and d ((n)d(d))
         n = int(strN)
@@ -52,7 +52,7 @@ def text2Die(text : str) -> list[tuple[int,int]]:
     return interpreted
     pass
 
-def durationFromString(text : str) -> int:
+def durationFromString(text: str) -> int:
     hourPoint = text.find("H")
     minPoint  = text.find("M")
     secPoint = text.find("S")
@@ -65,14 +65,14 @@ def durationFromString(text : str) -> int:
     pass
 
 START_TIME = time.time()
-def formatActivity(activity : discord.Activity):
+def formatActivity(activity: discord.Activity):
     uptimeRaw = time.time() - START_TIME
     uptimeMin = int(uptimeRaw // 60 % 60)
     uptimeH   = int(uptimeRaw // (60**2))
 
-    currentTime : datetime = datetime.now()
+    currentTime: datetime = datetime.now()
 
-    name : str = activity.name.format(
+    name: str = activity.name.format(
         year=currentTime.year,
         month=currentTime.month,
         day=currentTime.day,
@@ -91,7 +91,7 @@ class VoteView(discord.ui.View):
     def gen_button_callback(self, i):
         # Creates a callback for vote buttons
         # This is done in a method because of for-loop weirdness
-        async def button_callback(interaction : discord.Interaction):
+        async def button_callback(interaction: discord.Interaction):
             self.option_votes[interaction.user.id] = i # Update user's vote
             await interaction.response.send_message("Thank you for your vote! You may override your choice at any time!",ephemeral=True)
             pass
@@ -99,11 +99,11 @@ class VoteView(discord.ui.View):
         return button_callback
         pass
 
-    def __init__(self,vote_duration : int,vote_options : list[str], author : discord.Member, option_ids : list[str] = None):
+    def __init__(self,vote_duration: int,vote_options: list[str], author: discord.Member, option_ids: list[str] = None):
         super().__init__(timeout=vote_duration)
         self.vote_ends_on = datetime.utcnow().timestamp() + vote_duration
-        self.option_votes : dict[int,int] = {} # Member_id : Vote_index (Will ensure every user only casts one vote)
-        self.options : list[tuple[str,str]] = []
+        self.option_votes: dict[int,int] = {} # Member_id: Vote_index (Will ensure every user only casts one vote)
+        self.options: list[tuple[str,str]] = []
         self.author = author
         
         if option_ids is None: option_ids = [None]*len(vote_options)
@@ -129,7 +129,7 @@ class VoteView(discord.ui.View):
         pass
 
     @discord.ui.button(label="Withdraw vote",style=discord.ButtonStyle.blurple,row=1)
-    async def withdraw_vote(self, interaction : discord.Interaction, button : discord.ui.Button):
+    async def withdraw_vote(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
             self.option_votes.pop(interaction.user.id)
         except KeyError:
@@ -141,7 +141,7 @@ class VoteView(discord.ui.View):
         pass
 
     @discord.ui.button(label="End vote prematurely",style=discord.ButtonStyle.green,row=1)
-    async def stop_vote(self, interaction : discord.Interaction, button : discord.ui.Button):
+    async def stop_vote(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.author != interaction.user:
             await interaction.response.send_message("You did not start this vote, therefore you cannot end it",ephemeral=True)
             return
@@ -152,7 +152,7 @@ class VoteView(discord.ui.View):
             style=discord.ButtonStyle.green,
             label="Confirm premature finish"
         )
-        async def confirm(cinteraction : discord.Interaction):
+        async def confirm(cinteraction: discord.Interaction):
             await cinteraction.response.defer()
             self.stop()
             await interaction.followup.send(content="Vote was ended prematurely.",ephemeral=True)
@@ -167,7 +167,7 @@ class VoteView(discord.ui.View):
         ended_regularly = await self.wait()
         await self.message.edit(view=None)
 
-        vote_count : list[int] = [0]*len(self.options)
+        vote_count: list[int] = [0]*len(self.options)
         for voted_option in self.option_votes.values():
             vote_count[voted_option] += 1
             pass
@@ -208,7 +208,7 @@ class VoteView(discord.ui.View):
             pass
         pass
 
-    async def set_message(self, message : discord.Message, embed : discord.Embed):
+    async def set_message(self, message: discord.Message, embed: discord.Embed):
         self.message = message
         self.embed = embed
 
@@ -229,19 +229,19 @@ class VoteView(discord.ui.View):
         pass
 
     @classmethod
-    async def from_dict(cls : "VoteView", src : "RawVote") -> "VoteView":
-        raw_votes : dict[int, int] = {
+    async def from_dict(cls: "VoteView", src: "RawVote") -> "VoteView":
+        raw_votes: dict[int, int] = {
             int(member_id): vi 
             for member_id, vi in src["votes"].items()
         } # This is mapping MemberId:vote_index
         # For some reason MySQL doesn't accept integers as JSON-object keys, which is why they are converted to strings
-        raw_options : list[tuple[str,int]] = src["options"] # This is (OptionName,OptionSnowflake)
-        author_id : int = src["author"]
-        vote_ends_on : float = src["vote_ends_on"]
+        raw_options: list[tuple[str,int]] = src["options"] # This is (OptionName,OptionSnowflake)
+        author_id: int = src["author"]
+        vote_ends_on: float = src["vote_ends_on"]
         guild_id, channel_id, message_id = src["message"]
 
         guild = BOT.get_guild(guild_id)
-        message : discord.Message = await guild.get_channel(channel_id).fetch_message(message_id)
+        message: discord.Message = await guild.get_channel(channel_id).fetch_message(message_id)
         author = await guild.fetch_member(author_id)
 
         vote_duration = vote_ends_on - datetime.utcnow().timestamp()
@@ -249,7 +249,7 @@ class VoteView(discord.ui.View):
         options, option_ids = zip(*raw_options) # Unzipping
 
 
-        obj : VoteView = cls(vote_duration,options,author,option_ids)
+        obj: VoteView = cls(vote_duration,options,author,option_ids)
         obj.option_votes = raw_votes.copy()
         await obj.set_message(message,message.embeds[0])
 
@@ -259,7 +259,7 @@ class VoteView(discord.ui.View):
         pass
     pass
 
-async def vote_message_converter(ctx, message : str) -> int:
+async def vote_message_converter(ctx, message: str) -> int:
     try:
         converted_message_id = int(message) # Try conversion to an integer
     except ValueError: # Use converter otherwise
@@ -274,10 +274,10 @@ async def vote_message_converter(ctx, message : str) -> int:
     return converted_message_id
     pass
 
-async def check_vote_perms(member : discord.Member, channel_id : int, guild_id : int) -> bool:
+async def check_vote_perms(member: discord.Member, channel_id: int, guild_id: int) -> bool:
     async with SESSION_FACTORY() as session:
-        result : CursorResult = await session.execute(sql.select(Guild.vote_permissions).where(Guild.id==str(guild_id)))
-        vote_permissions : dict = result.scalar_one_or_none()
+        result: CursorResult = await session.execute(sql.select(Guild.vote_permissions).where(Guild.id==str(guild_id)))
+        vote_permissions: dict = result.scalar_one_or_none()
 
     if vote_permissions is None:
         return True
@@ -288,7 +288,7 @@ async def check_vote_perms(member : discord.Member, channel_id : int, guild_id :
         roles = member.roles.copy()
         roles.reverse()
         for role in roles:
-            role : discord.Role
+            role: discord.Role
             current_override = vote_permissions["role_overrides"].get(str(role.id))
             if current_override is not None:
                 role_override = current_override
@@ -411,7 +411,7 @@ class ReactionRoleEditor(editor.CloseEditor):
 
     async def _update_sql(self):
         async with SESSION_FACTORY() as session:
-            result : CursorResult = await session.execute(
+            result: CursorResult = await session.execute(
                 sql.select(ReactionRoles)
                 .where(ReactionRoles.message_id == str(self._target_message.id))
             )
@@ -816,9 +816,9 @@ class Utility(commands.Cog):
         self.vote_saver.start()
         
         # This needs to be done manually because of https://github.com/Rapptz/discord.py/issues/7823
-        self.reaction_role_manager= app_commands.ContextMenu(
+        self.reaction_role_manager = app_commands.ContextMenu(
             name="Reaction Roles",
-            callback= self.reaction_role_manager
+            callback = self.reaction_role_manager
         )
         BOT.tree.add_command(self.reaction_role_manager)
         pass
@@ -834,17 +834,17 @@ class Utility(commands.Cog):
         pass
 
 
-    VOTE_PROCESSES : dict[MessageId,VoteView]                                                       = {}
-    SCHEDULED_MSGS : dict[GuildId,dict[str,ScheduledMessage]]                                       = {}
-    REACTION_ROLES : ReactionRolesDict                                                              = {}
+    VOTE_PROCESSES: dict[MessageId,VoteView]                                                       = {}
+    SCHEDULED_MSGS: dict[GuildId,dict[str,ScheduledMessage]]                                       = {}
+    REACTION_ROLES: ReactionRolesDict                                                              = {}
 
     @app_commands.command(name="roll",description="Roll a dice!")
     @app_commands.describe(die="The dice to roll. (e.g. 10d8+5d6)", sort="Set to true, to sort the results")
     async def roll_dice(
         self, 
         interaction: discord.Interaction, 
-        die : str,
-        sort : bool = False
+        die: str,
+        sort: bool = False
         ):
         if die.count("+") > CONFIG.MAX_ROLL_COMBOS: # Check if the command has more than the maximum amount of die types.
             await interaction.response.send_message("Oh no! I'm sorry, that's just to complicated for me. Try to limit your excitement to {} combinations".format(CONFIG.MAX_ROLL_COMBOS))
@@ -896,7 +896,7 @@ class Utility(commands.Cog):
     
     @app_commands.command(name="set_announcement",description="Set a channel to receive Typhoon announcements in")
     @utils.perm_message_check("Now, hold on! I cannot let you do this (No Permission)",manage_guild=True)
-    async def set_announcement_override(self, interaction: discord.Interaction, channel : discord.TextChannel):
+    async def set_announcement_override(self, interaction: discord.Interaction, channel: discord.TextChannel):
         if not isinstance(channel,discord.TextChannel):
             await interaction.response.send_message("Please only use Text Channels as arguments. Otherwise it just won't work",ephemeral=True)
             return
@@ -941,7 +941,7 @@ class Utility(commands.Cog):
         await editor.update()
         pass
 
-    vote= app_commands.Group(name="vote", description="Voting, you know? Ask a question, give some answers, and wait.",
+    vote = app_commands.Group(name="vote", description="Voting, you know? Ask a question, give some answers, and wait.",
     guild_only=True)
 
     @vote.command(name="create",description="Create a new vote sent in an embed format with buttons as options.")
@@ -955,8 +955,8 @@ class Utility(commands.Cog):
     @vote.command(name="cast",description="Cast a vote into an existing poll")
     @app_commands.describe(message="The message the vote is associated with. This can be a message id or a URL.",
     option="The number of what you want to vote for (left->right). Leave empty to reset your vote.")
-    async def cast_vote(self, interaction: discord.Interaction, message : str,option : int = None):
-        ctx= await commands.Context.from_interaction(interaction)
+    async def cast_vote(self, interaction: discord.Interaction, message: str,option: int = None):
+        ctx = await commands.Context.from_interaction(interaction)
         converted_message_id = await vote_message_converter(ctx,message)
         if converted_message_id is None: return # Handling was already done in this case
 
@@ -1001,8 +1001,8 @@ class Utility(commands.Cog):
 
     @vote.command(name="finish",description="End a vote prematurely")
     @app_commands.describe(message="The message the vote is associated with. This can be a message id or a URL")
-    async def finish_vote(self, interaction: discord.Interaction, message : str):
-        ctx= await commands.Context.from_interaction(interaction)
+    async def finish_vote(self, interaction: discord.Interaction, message: str):
+        ctx = await commands.Context.from_interaction(interaction)
         converted_message_id = await vote_message_converter(ctx,message)
         if converted_message_id is None: return # If return is None an error was already handled.
 
@@ -1074,7 +1074,7 @@ class Utility(commands.Cog):
 
     @commands.Cog.listener("on_raw_reaction_add")
     @commands.Cog.listener("on_raw_reaction_remove")
-    async def reaction_role_listener(self, payload : discord.RawReactionActionEvent):
+    async def reaction_role_listener(self, payload: discord.RawReactionActionEvent):
         if payload.guild_id is None or payload.user_id == BOT.user.id: return # Do nothing if reaction is outside of guild or user is this bot (to prevent the bot having 50 million roles and appearing in them as well)
 
         message_id = payload.message_id
@@ -1118,13 +1118,13 @@ class Utility(commands.Cog):
         await BOT.wait_until_ready()
 
         async with SESSION_FACTORY() as session:
-            result : CursorResult = await session.execute(sql.select(ReactionRoles))
-            all_reactionroles : list[ReactionRoles] = result.scalars().all() # Get all reaction role objects
+            result: CursorResult = await session.execute(sql.select(ReactionRoles))
+            all_reactionroles: list[ReactionRoles] = result.scalars().all() # Get all reaction role objects
             pass
 
         for reaction_roles in all_reactionroles:
             message_id = int(reaction_roles.message_id)
-            react_roles : ReactionRolesDict = reaction_roles.react_roles
+            react_roles: ReactionRolesDict = reaction_roles.react_roles
 
             # This could have been done in a dictionary comprehension, but, seeing as I do in fact have a soul and would like to keep my sanity, it wasn't done here.
             # Although if you really need it: {discord.PartialEmoji.from_str(emoji_str):BOT.get_guild(guild_id).get_role(role_id) for emoji_str, (guild_id, role_id) in react_roles}
@@ -1145,10 +1145,10 @@ class Utility(commands.Cog):
 
     # Message Webhooks
 
-    async def getTimeZone(self, guild_id : int):
+    async def getTimeZone(self, guild_id: int):
         
         async with SESSION_FACTORY() as session:
-            result : CursorResult = await session.execute(sql.select(Guild.timezone).where(Guild.id == str(guild_id)))
+            result: CursorResult = await session.execute(sql.select(Guild.timezone).where(Guild.id == str(guild_id)))
             timezone_text = result.scalar_one_or_none()
             pass
 
@@ -1168,11 +1168,11 @@ class Utility(commands.Cog):
         pass
 
     @app_commands.command(name="schedule_msg",description="Schedule a message to be sent later")
-    async def schedule_msg(self, interaction: discord.Interaction, time : str, content : str):
+    async def schedule_msg(self, interaction: discord.Interaction, time: str, content: str):
         tz = await self.getTimeZone(interaction.guild_id)
 
         time_converter = TimeConverter()
-        ctx= await commands.Context.from_interaction(interaction)
+        ctx = await commands.Context.from_interaction(interaction)
         try:
             timeObj = await time_converter.convert(ctx,time,tz=tz) # Convert argument into a datetime object
             pass
@@ -1198,8 +1198,8 @@ class Utility(commands.Cog):
         ) # Create scheduled_msg object
 
         async with SESSION_FACTORY() as session:
-            result : CursorResult = await session.execute(sql.select(ScheduledMessages).where(ScheduledMessages.guild_id == str(interaction.guild_id)))
-            scheduled_obj : ScheduledMessages = result.scalar_one_or_none()
+            result: CursorResult = await session.execute(sql.select(ScheduledMessages).where(ScheduledMessages.guild_id == str(interaction.guild_id)))
+            scheduled_obj: ScheduledMessages = result.scalar_one_or_none()
             if scheduled_obj is None:
                 scheduled_obj = ScheduledMessages(guild_id=str(interaction.guild_id),schedules=[])
                 session.add(scheduled_obj)
@@ -1221,7 +1221,7 @@ class Utility(commands.Cog):
         pass
 
     @app_commands.command(name="send_anon",description="Send a message anonymously (no one will know who did it)")
-    async def send_anon(self, interaction: discord.Interaction, message : str):
+    async def send_anon(self, interaction: discord.Interaction, message: str):
         webhook = await WEBHOOK_POOL.get(interaction.channel,reason="/send_anon required Webhook") # Retrieve Webhook from pool
         
         await webhook.send(
@@ -1266,10 +1266,10 @@ class Utility(commands.Cog):
 
         async with SESSION_FACTORY() as session:
             async def add_scheduled_messages(guild: discord.Guild):
-                result : CursorResult = await session.execute(sql.select(ScheduledMessages).where(ScheduledMessages.guild_id==str(guild.id)))
+                result: CursorResult = await session.execute(sql.select(ScheduledMessages).where(ScheduledMessages.guild_id==str(guild.id)))
 
                 try:
-                    scheduled_msgs : dict[str,ScheduledMessage] = result.scalar_one().schedules
+                    scheduled_msgs: dict[str,ScheduledMessage] = result.scalar_one().schedules
                 except NoResultFound: # When there is no entry for this guild, skip this one
                     return
                     pass
@@ -1300,7 +1300,7 @@ class Utility(commands.Cog):
         currentTS = datetime.now(timezone.utc).timestamp()
         loop = asyncio.get_event_loop()
 
-        async def find_due_messages(guild_id : GuildId) -> tuple[GuildId,list[tuple[Timestamp,ChannelId,str,tuple[MemberName,AvatarUrl]]]]:
+        async def find_due_messages(guild_id: GuildId) -> tuple[GuildId,list[tuple[Timestamp,ChannelId,str,tuple[MemberName,AvatarUrl]]]]:
             due_messages = await loop.run_in_executor(
                 None,
                 filter,
@@ -1320,14 +1320,14 @@ class Utility(commands.Cog):
         
 
         async def send_due_message(
-            guild_id : GuildId, 
+            guild_id: GuildId, 
             snowflake: str,
-            scheduled_msg : ScheduledMessage
+            scheduled_msg: ScheduledMessage
         ):
             # Set up some variables to make the code easier to read
             channel_id = scheduled_msg[1]
-            content    = scheduled_msg[2]
-            author_name= scheduled_msg[3][0]
+            content = scheduled_msg[2]
+            author_name = scheduled_msg[3][0]
             avatar_url = scheduled_msg[3][1]
 
             channel = await BOT.fetch_channel(channel_id) # Get the channel object neccessary to get the Webhook
@@ -1349,8 +1349,8 @@ class Utility(commands.Cog):
         async with SESSION_FACTORY() as session:
             # Get all SQL Database entries for scheduled messages
             required_guilds = [str(guild_id) for guild_id, _ in due_messages]
-            result : CursorResult = (await session.execute(sql.select(ScheduledMessages).where(ScheduledMessages.guild_id.in_(required_guilds))))
-            sql_msgs : dict[GuildId,ScheduledMessages] = {int(scalar.guild_id):scalar for scalar in result.scalars()}
+            result: CursorResult = (await session.execute(sql.select(ScheduledMessages).where(ScheduledMessages.guild_id.in_(required_guilds))))
+            sql_msgs: dict[GuildId,ScheduledMessages] = {int(scalar.guild_id):scalar for scalar in result.scalars()}
 
             await asyncio.gather(*[
                 send_due_message(guild_id, snowflake,scheduled_msg)
@@ -1385,7 +1385,7 @@ class Utility(commands.Cog):
     pass
 
 # Setup & Teardown
-async def setup(bot : commands.Bot):
+async def setup(bot: commands.Bot):
     global CONFIG
     global BOT, WEBHOOK_POOL, COG
     global ENGINE, SESSION_FACTORY
@@ -1404,7 +1404,7 @@ async def setup(bot : commands.Bot):
     logging.info("Added utility extension")
     pass
 
-async def teardown(bot : commands.Bot):
+async def teardown(bot: commands.Bot):
     await bot.remove_cog("Utility")
     
     raw_votes: dict[GuildId,list[dict]] = {}

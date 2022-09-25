@@ -9,18 +9,18 @@ from .utils import generate_snowflake
 class EditorItem(metaclass=ABCMeta):
     __slots__ = ("_item", "_owner")
 
-    _item_cls: type[ui.Item]= ...
+    _item_cls: type[ui.Item] = ...
     
     def __init_subclass__(cls, item_cls: type[ui.Item]):
-        cls._item_cls= item_cls
+        cls._item_cls = item_cls
         pass
 
     def __init__(self, 
         *args,
         **kwargs
         ):
-        self._item= self._item_cls(*args,**kwargs)
-        self._item.callback= self._item_callback
+        self._item = self._item_cls(*args,**kwargs)
+        self._item.callback = self._item_callback
         pass
 
     async def _item_callback(self, interaction: discord.Interaction):
@@ -54,9 +54,9 @@ def _wrap_select(ref, callback):
 def button(
     label: str,
     style: discord.ButtonStyle,
-    emoji: discord.PartialEmoji|discord.Emoji|str= None,
-    disabled: bool= False,
-    row: int|None= None
+    emoji: discord.PartialEmoji|discord.Emoji|str=None,
+    disabled: bool=False,
+    row: int|None=None
     ):
     def decorator(func: Callable[[Editor,EditorItem,discord.Interaction],Coroutine[Any,Any,None]]):
         func.__item_class__ = ui.Button
@@ -76,11 +76,11 @@ def button(
 
 def select(
     options: list[discord.SelectOption],
-    placeholder: str|None= None,
-    min_values: int= 1,
-    max_values: int= 1,
-    disabled: bool= False,
-    row: int|None= None
+    placeholder: str|None=None,
+    min_values: int=1,
+    max_values: int=1,
+    disabled: bool=False,
+    row: int|None=None
     ):
     def decorator(func: Callable[[Editor,EditorItem,list[str],discord.Interaction],Coroutine[Any,Any,None]]):
         func.__item_class__ = ui.Select
@@ -116,11 +116,11 @@ class Editor(metaclass=ABCMeta):
             setattr(self,name,value)
 
             self._view.add_item(value._item)
-            self._children[name]= value
+            self._children[name] = value
             pass
         pass
 
-    def __init__(self, author: discord.Member,*, timeout: Optional[float]= 180, snowflake_generator: Callable[[],str]=generate_snowflake):
+    def __init__(self, author: discord.Member,*, timeout: Optional[float]=180, snowflake_generator: Callable[[],str]=generate_snowflake):
         self._editor_author = author
 
         self._view = ui.View(timeout=timeout)
@@ -151,7 +151,7 @@ class Editor(metaclass=ABCMeta):
     pass
 
 class SendCloseEditor(Editor):
-    def __init__(self, author: discord.Member, *, timeout: Optional[float] = 180, snowflake_generator: Callable[[], str] = generate_snowflake):
+    def __init__(self, author: discord.Member, *, timeout: Optional[float]=180, snowflake_generator: Callable[[], str]=generate_snowflake):
         super().__init__(author, timeout=timeout, snowflake_generator=snowflake_generator)
 
         async def on_timeout():
@@ -197,7 +197,7 @@ class SendCloseEditor(Editor):
     pass
 
 class CloseEditor(Editor):
-    def __init__(self, author: discord.Member, *, timeout: Optional[float] = 180, snowflake_generator: Callable[[], str] = generate_snowflake):
+    def __init__(self, author: discord.Member, *, timeout: Optional[float]=180, snowflake_generator: Callable[[], str]=generate_snowflake):
         super().__init__(author,timeout=timeout, snowflake_generator=snowflake_generator)
 
         async def on_timeout():

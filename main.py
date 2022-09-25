@@ -11,14 +11,14 @@ from ormclasses import *
 import discord
 from discord.ext import commands
 
-CONFIG : cfg.Config = ...
+CONFIG: cfg.Config = ...
 CONFIG_FILE = "config.cfg"
 
-ENGINE : asql.AsyncEngine = ...
-SESSION_FACTORY : Sessionmaker = ...
+ENGINE: asql.AsyncEngine = ...
+SESSION_FACTORY: Sessionmaker = ...
 
-TOKEN : str = ...
-BOT : commands.Bot = ...
+TOKEN: str = ...
+BOT: commands.Bot = ...
 
 INVITE_LINK = "https://discord.com/oauth2/authorize?client_id=897055320646492231&scope=bot%20applications.commands&permissions=8"
 
@@ -27,11 +27,11 @@ class DataStorage:
 
 class Bot(commands.Bot):
     __slots__= "working_guilds", 
-    def __init__(self, *args,guild_ids= None, **kwargs):
+    def __init__(self, *args,guild_ids = None, **kwargs):
         super().__init__(*args,**kwargs)
 
         if guild_ids is not None:
-            self.working_guilds= [discord.Object(id=gid) for gid in guild_ids]
+            self.working_guilds = [discord.Object(id=gid) for gid in guild_ids]
             pass
         pass
 
@@ -98,7 +98,7 @@ async def main():
 
     # Initialise ORM
     async with ENGINE.begin() as conn: # Create all tables to make sure that they actually... exist
-        conn : asql.AsyncConnection
+        conn: asql.AsyncConnection
         await conn.run_sync(Base.metadata.create_all)
         pass
 
@@ -117,7 +117,7 @@ async def main():
         pass
 
     @BOT.listen("on_guild_join")
-    async def join_message(guild : discord.Guild):
+    async def join_message(guild: discord.Guild):
         channel = guild.system_channel or guild.public_updates_channel or guild.text_channels[0]
 
         embed = discord.Embed(colour=discord.Colour.blue(),title="Hello!")
@@ -129,9 +129,9 @@ async def main():
         pass
 
     @BOT.listen("on_guild_join")
-    async def sql_creator(guild : discord.Guild):
+    async def sql_creator(guild: discord.Guild):
         async with SESSION_FACTORY() as session:
-            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(guild.id)))
+            result: CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(guild.id)))
             if result.first() is None:
                 session.add(Guild(id=str(guild.id)))
                 await session.commit()
@@ -140,7 +140,7 @@ async def main():
         pass
 
     @BOT.listen("on_guild_remove")
-    async def sql_deleter(guild : discord.Guild):
+    async def sql_deleter(guild: discord.Guild):
         async with SESSION_FACTORY() as session:
             await session.execute(sql.delete(Guild).where(Guild.id == str(guild.id)))
             await session.commit()
@@ -148,8 +148,8 @@ async def main():
         pass
 
     @BOT.listen("on_command_error")
-    async def command_error_catch(ctx : commands.Context, error : commands.CommandError):
-        cmd : commands.Command = ctx.invoked_subcommand or ctx.command
+    async def command_error_catch(ctx: commands.Context, error: commands.CommandError):
+        cmd: commands.Command = ctx.invoked_subcommand or ctx.command
         if isinstance(error,commands.errors.MissingPermissions) and hasattr(cmd.callback,"permission_error_msg"): # If utils.perm_message_check was used
             await ctx.send(cmd.callback.permission_error_msg,ephemeral=True)
             pass

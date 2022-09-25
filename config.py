@@ -24,13 +24,13 @@ from moderation import AutomodState, ModConfig
 from ormclasses import *
 # Declare constants
 # These will be redefined in the load function at the bottom
-CONFIG : config.Config = ...
+CONFIG: config.Config = ...
 
-BOT : commands.Bot = ...
-WEBHOOK_POOL : utils.WebhookPool = ...
+BOT: commands.Bot = ...
+WEBHOOK_POOL: utils.WebhookPool = ...
 
-ENGINE : asql.AsyncEngine = ...
-SESSION_FACTORY : orm.sessionmaker = ...
+ENGINE: asql.AsyncEngine = ...
+SESSION_FACTORY: orm.sessionmaker = ...
 
 #####################################################
 
@@ -40,7 +40,7 @@ async def send_ephemeral(interaction, content): await interaction.followup.send(
 async def EMPTY_UPDATE(self): ...
 
 # Moderation
-async def update(self : ConfigElement):
+async def update(self: ConfigElement):
     # This will always add a list of all current god roles to the embed
     guild = self.ctx.guild
     
@@ -51,7 +51,7 @@ async def update(self : ConfigElement):
     self.embed.add_field(name="Current god roles",value="\n".join([role.mention for role in god_roles]) or "None")
     pass
 
-async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
+async def on_interaction(self: ConfigElement, element: discord.ui.Item, interaction: discord.Interaction):
     # Get all the current god roles from RAM
     BOT.DATA.GOD_ROLES.setdefault(self.ctx.guild.id,set())
     god_roles = BOT.DATA.GOD_ROLES[self.ctx.guild.id]
@@ -79,7 +79,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             await send_ephemeral(interaction,f"Removed {role.mention} from the list of god roles!")
             pass
         if element.label in ("Add","Remove"):
-            session : asql.AsyncSession = SESSION_FACTORY()
+            session: asql.AsyncSession = SESSION_FACTORY()
             try:
                 result = await session.execute(sql.select(Guild).where(Guild.id == str(self.ctx.guild.id)))
             
@@ -113,12 +113,12 @@ Mod_Gods = element_factory(
 
 #
 
-async def update(self : ConfigElement):
+async def update(self: ConfigElement):
     guild = self.ctx.guild
 
     async with SESSION_FACTORY() as session:
-        session : asql.AsyncSession
-        result : CursorResult = await session.execute(sql.select(Guild.logging_settings).where(Guild.id == str(guild.id)))
+        session: asql.AsyncSession
+        result: CursorResult = await session.execute(sql.select(Guild.logging_settings).where(Guild.id == str(guild.id)))
         log_settings = LoggingSettings.from_value(result.scalar_one_or_none() or 0)
         pass
 
@@ -131,7 +131,7 @@ async def update(self : ConfigElement):
         pass
     pass
 
-async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
+async def on_interaction(self: ConfigElement, element: discord.ui.Item, interaction: discord.Interaction):
     if isinstance(element,discord.ui.Select):
         logging_settings = BOT.DATA.LOGGING_SETTINGS[self.ctx.guild.id] = LoggingSettings()
         for value in element.values:
@@ -148,13 +148,13 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
     elif element.label == "Set Channel":
         await send_ephemeral(interaction,"Please reply with the text channel you want logging to happen in")
         while True:
-            channel : discord.TextChannel = await utils.wait_for_text_channel(BOT,self.ctx,"The message you sent could not be interpreted as a text channel. Please try again")
+            channel: discord.TextChannel = await utils.wait_for_text_channel(BOT,self.ctx,"The message you sent could not be interpreted as a text channel. Please try again")
             if channel.guild == self.ctx.guild: break
             else: await send_ephemeral(interaction,"The channel you passed doesn't exist on this server. Please pass a channel on this server")
             pass
         
         BOT.DATA.LOGGING_CHANNEL[self.ctx.guild.id] = channel.id
-        session : asql.AsyncSession = SESSION_FACTORY()
+        session: asql.AsyncSession = SESSION_FACTORY()
         try:
             sql_guild = await utils.get_guild(session,self.ctx.guild.id)
             sql_guild.logging_channel = str(channel.id)
@@ -165,7 +165,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
         await send_ephemeral(interaction,f"The Logging Channel has been changed to {channel.mention}!")
         pass
     elif element.label == "Disable":
-        session : asql.AsyncSession = SESSION_FACTORY()
+        session: asql.AsyncSession = SESSION_FACTORY()
         try:
             sql_guild = await utils.get_guild(session, self.ctx.guild.id)
             sql_guild.logging_channel = None
@@ -205,24 +205,24 @@ Mod_Logging = element_factory(
 )
 
 # ---
-def assure_mod_config(guild_id : int) -> ModConfig:
+def assure_mod_config(guild_id: int) -> ModConfig:
     BOT.DATA.AUTOMOD_SETTINGS.setdefault(guild_id, ModConfig())
     return BOT.DATA.AUTOMOD_SETTINGS[guild_id]
     pass
 
-def assure_automod_state(guild_id : int) -> AutomodState:
+def assure_automod_state(guild_id: int) -> AutomodState:
     BOT.DATA.AUTOMODS.setdefault(guild_id, AutomodState())
     return BOT.DATA.AUTOMODS[guild_id]
     pass
 
-def update_automod_config_page(self : ConfigElement, values : tuple[tuple[str,Any],...]):
+def update_automod_config_page(self: ConfigElement, values: tuple[tuple[str,Any],...]):
     apply_specials = lambda state: (":white_check_mark:" if state else ":x:") if isinstance(state,bool) else f"`{state}`"
     value_str = "\n".join([f"{value}: {apply_specials(state)}" for value, state in values])
     self.embed.clear_fields()
     self.embed.add_field(name="Config Values",value=value_str,inline=False)
     pass
 
-async def update_sql_mod_config(guild_id : int, mod_config : ModConfig):
+async def update_sql_mod_config(guild_id: int, mod_config: ModConfig):
     session = SESSION_FACTORY()
     try:
         sql_guild = await utils.get_guild(session,guild_id)
@@ -234,24 +234,24 @@ async def update_sql_mod_config(guild_id : int, mod_config : ModConfig):
         pass
     pass
 
-async def change_automod_setting_state(guild_id : int, automod : str, state : bool):
+async def change_automod_setting_state(guild_id: int, automod: str, state: bool):
     states = assure_automod_state(guild_id)
     setattr(states,automod,state)
     await states.save(guild_id)
     pass
 
-async def change_mod_config_value(guild_id : int, setting : str, value : Any):
+async def change_mod_config_value(guild_id: int, setting: str, value: Any):
     mod_config = assure_mod_config(guild_id)
     setattr(mod_config,setting,value)
     
     await update_sql_mod_config(guild_id,mod_config)
     pass
 
-async def specified_convert(ctx : commands.Context, converter, error_msg : str, check = lambda obj: True) -> Any:
+async def specified_convert(ctx: commands.Context, converter, error_msg: str, check = lambda obj: True) -> Any:
     return await utils.wait_for_convert(bot=BOT, ctx=ctx, converter=converter, error_prompt=error_msg, check=check, timeout=CONFIG.EDIT_TIMEOUT)
     pass
 
-async def update_consequences(guild_id : int, target : str, selected_consequences : list[str]):
+async def update_consequences(guild_id: int, target: str, selected_consequences: list[str]):
     mod_config = assure_mod_config(guild_id)
     # Doing these seperately so as to not create a new list object preserving potential weirdness in other code segments
     getattr(mod_config,target)[0] = "delete" in selected_consequences
@@ -260,8 +260,8 @@ async def update_consequences(guild_id : int, target : str, selected_consequence
     await update_sql_mod_config(guild_id, mod_config)
     pass
 
-def update_select_menu(self : ConfigElement, consequences : list[bool,bool]):
-    select_menu : discord.ui.Select = next(filter(lambda item: isinstance(item,discord.ui.Select),self.view.children))
+def update_select_menu(self: ConfigElement, consequences: list[bool,bool]):
+    select_menu: discord.ui.Select = next(filter(lambda item: isinstance(item,discord.ui.Select),self.view.children))
     for option in select_menu.options:
         if option.value == "delete":
             option.default = consequences[0]
@@ -273,7 +273,7 @@ def update_select_menu(self : ConfigElement, consequences : list[bool,bool]):
     pass
 
 
-async def update(self : ConfigElement):
+async def update(self: ConfigElement):
     mod_config = assure_mod_config(self.ctx.guild.id)
 
     update_select_menu(self,mod_config.spam_consequence)
@@ -286,7 +286,7 @@ async def update(self : ConfigElement):
     ))
     pass
 
-async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
+async def on_interaction(self: ConfigElement, element: discord.ui.Item, interaction: discord.Interaction):
     if isinstance(element, discord.ui.Button):
         if element.label == "Enable":
             await change_automod_setting_state(self.ctx.guild.id,"spamspam",True)
@@ -361,7 +361,7 @@ Automod_Spam = element_factory(
 
 #
 
-async def update(self : ConfigElement):
+async def update(self: ConfigElement):
     mod_config = assure_mod_config(self.ctx.guild.id)
 
     update_select_menu(self,mod_config.caps_consequence)
@@ -374,7 +374,7 @@ async def update(self : ConfigElement):
     ))
     pass
 
-async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
+async def on_interaction(self: ConfigElement, element: discord.ui.Item, interaction: discord.Interaction):
     if isinstance(element, discord.ui.Button):
         if element.label == "Enable":
             await change_automod_setting_state(self.ctx.guild.id,"capsspam",True)
@@ -455,7 +455,7 @@ Automod_Caps = element_factory(
 
 #
 
-async def update(self : ConfigElement):
+async def update(self: ConfigElement):
     mod_config = assure_mod_config(self.ctx.guild.id)
 
     update_select_menu(self,mod_config.emoji_consequence)
@@ -468,7 +468,7 @@ async def update(self : ConfigElement):
     ))
     pass
 
-async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
+async def on_interaction(self: ConfigElement, element: discord.ui.Item, interaction: discord.Interaction):
     if isinstance(element, discord.ui.Button):
         if element.label == "Enable":
             await change_automod_setting_state(self.ctx.guild.id,"emotespam",True)
@@ -582,22 +582,22 @@ def assure_reward_roles(guild_id) -> RewardRoles:
     return BOT.DATA.REWARD_ROLES[guild_id]
     pass
 
-async def update(self : ConfigElement):
+async def update(self: ConfigElement):
     lvl_settings = assure_level_settings(self.ctx.guild.id)
 
     self.embed.clear_fields()
     self.embed.add_field(name="Leveling State",value="Enabled" if lvl_settings.enabled else "Disabled",inline=False)
     pass
 
-async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
+async def on_interaction(self: ConfigElement, element: discord.ui.Item, interaction: discord.Interaction):
     if isinstance(element,discord.ui.Button):
         lvl_settings = assure_level_settings(self.ctx.guild.id)
         if element.label == "Enable":
             lvl_settings.enabled = True
             
-            session : asql.AsyncSession = SESSION_FACTORY()
+            session: asql.AsyncSession = SESSION_FACTORY()
             try:
-                sql_guild : Guild = await utils.get_guild(session,self.ctx.guild.id)
+                sql_guild: Guild = await utils.get_guild(session,self.ctx.guild.id)
                 sql_guild.level_state = True
                 await session.commit()
             finally:
@@ -608,9 +608,9 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
         elif element.label == "Disable":
             lvl_settings.enabled = False
 
-            session : asql.AsyncSession = SESSION_FACTORY()
+            session: asql.AsyncSession = SESSION_FACTORY()
             try:
-                sql_guild : Guild = await utils.get_guild(session,self.ctx.guild.id)
+                sql_guild: Guild = await utils.get_guild(session,self.ctx.guild.id)
                 sql_guild.level_state = False
                 await session.commit()
             finally:
@@ -636,7 +636,7 @@ Lvl_state = element_factory(
 
 #
 
-async def update(self : ConfigElement):
+async def update(self: ConfigElement):
     lvl_settings = assure_level_settings(self.ctx.guild.id)
 
     self.embed.clear_fields()
@@ -644,7 +644,7 @@ async def update(self : ConfigElement):
     self.embed.add_field(name="Upper gain",value=str(lvl_settings.upper_gain))
     pass
 
-async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
+async def on_interaction(self: ConfigElement, element: discord.ui.Item, interaction: discord.Interaction):
     async def update_gain(ram_key, sql_key, val):
         lvl_settings = assure_level_settings(self.ctx.guild.id)
 
@@ -726,14 +726,14 @@ Lvl_xp = element_factory(
 )
 
 #
-async def update(self : ConfigElement):
+async def update(self: ConfigElement):
     lvl_settings = assure_level_settings(self.ctx.guild.id)
     
     self.embed.clear_fields()
     self.embed.add_field(name="XP Timeout",value=utils.stringFromDuration(lvl_settings.timeout),inline=False)
     pass
 
-async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
+async def on_interaction(self: ConfigElement, element: discord.ui.Item, interaction: discord.Interaction):
     if isinstance(element,discord.ui.Button):
         lvl_settings = assure_level_settings(self.ctx.guild.id)
         
@@ -741,7 +741,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             await send_ephemeral(interaction,"Please send a time formatted like `<hours>H<minutes>M<seconds>S` to change the cooldown for xp gain")
             converter = DurationConverter()
             while True:
-                msg : discord.Message = await BOT.wait_for("message",check=lambda msg: msg.channel == self.ctx.channel and msg.author == self.ctx.author,timeout=CONFIG.EDIT_TIMEOUT)
+                msg: discord.Message = await BOT.wait_for("message",check=lambda msg: msg.channel == self.ctx.channel and msg.author == self.ctx.author,timeout=CONFIG.EDIT_TIMEOUT)
                 try:
                     timeout = await converter.convert(self.ctx,msg.content)
                 except OutOfOrderException:
@@ -757,7 +757,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
                     pass
                 pass
 
-            session : asql.AsyncSession = SESSION_FACTORY()
+            session: asql.AsyncSession = SESSION_FACTORY()
             try:
                 sql_guild = await utils.get_guild(session,self.ctx.guild.id)
                 lvl_settings.timeout = sql_guild.xp_timeout = timeout
@@ -768,7 +768,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             await send_ephemeral(interaction,f"Set XP Gain Timeout to {utils.stringFromDuration(timeout)}")
             pass
         elif element.label == "Reset Timeout":
-            session : asql.AsyncSession = SESSION_FACTORY()
+            session: asql.AsyncSession = SESSION_FACTORY()
             try:
                 sql_guild = await utils.get_guild(session,self.ctx.guild.id)
                 lvl_settings.timeout = sql_guild.xp_timeout = Guild.xp_timeout.default.arg
@@ -795,7 +795,7 @@ Lvl_timeout = element_factory(
 )
 
 #
-async def update(self : ConfigElement):
+async def update(self: ConfigElement):
     lvl_settings = assure_level_settings(self.ctx.guild.id)
     
     if lvl_settings.channel_id is not None:
@@ -812,7 +812,7 @@ async def update(self : ConfigElement):
     self.embed.add_field(name="Current message template",value=lvl_settings.level_msg,inline=False)
     pass
 
-async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
+async def on_interaction(self: ConfigElement, element: discord.ui.Item, interaction: discord.Interaction):
     if isinstance(element,discord.ui.Button):
         if element.label == "Set Message":
             list_assembles = []
@@ -824,7 +824,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             await send_ephemeral(interaction,"Please send the message template you want to apply. Below is a list of variables that will be applied. A variable must always be surrounded by {}" + markdown)
 
             while True:
-                msg : discord.Message = await BOT.wait_for("message",check=lambda msg: msg.channel == self.ctx.channel and msg.author == self.ctx.author)
+                msg: discord.Message = await BOT.wait_for("message",check=lambda msg: msg.channel == self.ctx.channel and msg.author == self.ctx.author)
                 new_template = msg.content
                 await msg.delete()
                 if len(new_template) > 200:
@@ -849,7 +849,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
 
             lvl_settings = assure_level_settings(self.ctx.guild.id)
             lvl_settings.level_msg = new_template
-            session : asql.AsyncSession = SESSION_FACTORY()
+            session: asql.AsyncSession = SESSION_FACTORY()
             try:
                 sql_guild = await utils.get_guild(session,self.ctx.guild.id)
                 sql_guild.level_msg = new_template
@@ -878,7 +878,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             lvl_settings = assure_level_settings(self.ctx.guild.id)
             lvl_settings.channel_id = channel.id
             # Update setting in database
-            session : asql.AsyncSession = SESSION_FACTORY()
+            session: asql.AsyncSession = SESSION_FACTORY()
             try:
                 sql_guild = await utils.get_guild(session,self.ctx.guild.id)
                 sql_guild.level_channel = str(channel.id)
@@ -893,7 +893,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             lvl_settings = assure_level_settings(self.ctx.guild.id)
             lvl_settings.level_msg = new_template
             # Update setting in Database
-            session : asql.AsyncSession = SESSION_FACTORY()
+            session: asql.AsyncSession = SESSION_FACTORY()
             try:
                 sql_guild = await utils.get_guild(session,self.ctx.guild.id)
                 sql_guild.level_msg = new_template
@@ -908,7 +908,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
             lvl_settings = assure_level_settings(self.ctx.guild.id)
             lvl_settings.channel_id = None
             # Update setting in database
-            session : asql.AsyncSession = SESSION_FACTORY()
+            session: asql.AsyncSession = SESSION_FACTORY()
             try:
                 sql_guild = await utils.get_guild(session,self.ctx.guild.id)
                 sql_guild.level_channel = None
@@ -934,9 +934,9 @@ Lvl_msgs = element_factory(
 
 #
 
-async def update(self : ConfigElement):
+async def update(self: ConfigElement):
     reward_roles = assure_reward_roles(self.ctx.guild.id)
-    inverse : dict[int,list[discord.Role]] = {}
+    inverse: dict[int,list[discord.Role]] = {}
     for role_id, level in reward_roles.internal.items():
         role = self.ctx.guild.get_role(role_id)
 
@@ -958,14 +958,14 @@ async def update(self : ConfigElement):
     self.embed.add_field(name="Level",value="\n".join(levels) if len(levels) > 0 else "None")
     pass
 
-async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
+async def on_interaction(self: ConfigElement, element: discord.ui.Item, interaction: discord.Interaction):
     if isinstance(element,discord.ui.Button):
         if element.label == "Add Reward Role":
             await send_ephemeral(interaction,"Please send a message mentioning the role you want to add as a reward role")
             role = await utils.wait_for_role(BOT,self.ctx,"The message you sent could not be interpreted as a role. Make sure your message actually mentions the role.",timeout=CONFIG.EDIT_TIMEOUT)
             
             await send_ephemeral(interaction,"Now send a message containing the level you wish to reward the role at.")
-            level : int = await specified_convert(
+            level: int = await specified_convert(
                 self.ctx, utils.IntConverter(),
                 "The message you sent is not interpretable as an integer. Please make sure your message only contains a number."
             )
@@ -1021,7 +1021,7 @@ Lvl_state.PARENT = Lvl_xp.PARENT = Lvl_timeout.PARENT = Lvl_rewards.PARENT = Lvl
 
 ####
 
-async def assure_clone_overrides(guild_id : int) -> tuple[bool,dict[int,bool]]:
+async def assure_clone_overrides(guild_id: int) -> tuple[bool,dict[int,bool]]:
     data = BOT.DATA.CLONE_OVERRIDES.get(guild_id)
     if data is None:
         session = SESSION_FACTORY()
@@ -1032,7 +1032,7 @@ async def assure_clone_overrides(guild_id : int) -> tuple[bool,dict[int,bool]]:
     return data
     pass
 
-async def store_clone_overrides(guild_id : int, overrides : dict[int,bool]):
+async def store_clone_overrides(guild_id: int, overrides: dict[int,bool]):
     session = SESSION_FACTORY()
     try:
         sql_guild = await utils.get_guild(session,guild_id)
@@ -1042,10 +1042,10 @@ async def store_clone_overrides(guild_id : int, overrides : dict[int,bool]):
         await session.close()
     pass
 
-async def update(self : ConfigElement):
-    session : asql.AsyncSession = SESSION_FACTORY()
+async def update(self: ConfigElement):
+    session: asql.AsyncSession = SESSION_FACTORY()
     try:
-        result : CursorResult = await session.execute(sql.select(Guild.clone_enabled).where(Guild.id == str(self.ctx.guild.id)))
+        result: CursorResult = await session.execute(sql.select(Guild.clone_enabled).where(Guild.id == str(self.ctx.guild.id)))
         clone_enabled = result.scalar_one_or_none()
     finally:
         await session.close()
@@ -1054,8 +1054,8 @@ async def update(self : ConfigElement):
     self.embed.add_field(name="Clone State",value="Enabled" if clone_enabled else "Disabled")
     pass
 
-async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
-    async def update_state(state : bool):
+async def on_interaction(self: ConfigElement, element: discord.ui.Item, interaction: discord.Interaction):
+    async def update_state(state: bool):
         session = SESSION_FACTORY()
         try:
             (await utils.get_guild(session,self.ctx.guild.id)).clone_enabled = True
@@ -1090,7 +1090,7 @@ Clone_State = element_factory(
 
 #
 
-async def update(self : ConfigElement):
+async def update(self: ConfigElement):
     _, overrides = await assure_clone_overrides(self.ctx.guild.id)
     channel_ids, states = zip(*overrides.items())
 
@@ -1101,8 +1101,8 @@ async def update(self : ConfigElement):
     self.embed.add_field(name="Override",value=override_str if len(override_str) > 0 else "Empty")
     pass
 
-async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
-    async def get_filter_channel(start_message : str, error_msg : str = None, extra_check = lambda channel: True):
+async def on_interaction(self: ConfigElement, element: discord.ui.Item, interaction: discord.Interaction):
+    async def get_filter_channel(start_message: str, error_msg: str = None, extra_check = lambda channel: True):
         await send_ephemeral(interaction,start_message)
         while True:
             channel = await utils.wait_for_text_channel(
@@ -1134,7 +1134,7 @@ async def on_interaction(self : ConfigElement, element : discord.ui.Item, intera
                 )
             
             _, overrides = await assure_clone_overrides(self.ctx.guild.id)
-            overrides : dict[int,bool]
+            overrides: dict[int,bool]
             overrides[channel.id] = True
             await store_clone_overrides(self.ctx.guild.id,overrides)
 
@@ -1186,7 +1186,7 @@ Clone_State.PARENT = Clone_Filter.PARENT = Clones
 
 ####
 
-async def on_interaction(self, element : discord.ui.Item, interaction : discord.Interaction):
+async def on_interaction(self, element: discord.ui.Item, interaction: discord.Interaction):
     if isinstance(element,discord.ui.Button):
         if element.label == "Set Channel":
             await send_ephemeral(interaction,"Please send a mention of the channel you want to use as an announcement channel.")
@@ -1223,8 +1223,8 @@ Announcement_Channel = element_factory(
 
 ####
 
-async def update(self : ConfigElement): 
-    session : asql.AsyncSession = SESSION_FACTORY()
+async def update(self: ConfigElement): 
+    session: asql.AsyncSession = SESSION_FACTORY()
     try:
         guild = await utils.get_guild(session,self.ctx.guild.id)
         vote_state = guild.vote_permissions.get("state",True)
@@ -1235,7 +1235,7 @@ async def update(self : ConfigElement):
     self.embed.add_field(name="Voting State",value="Enabled" if vote_state else "Disabled")
     pass
 
-async def change_vote_state(guild_id : int, state : bool):
+async def change_vote_state(guild_id: int, state: bool):
     session = SESSION_FACTORY()
     try:
         sql_guild = await utils.get_guild(session,guild_id)
@@ -1245,7 +1245,7 @@ async def change_vote_state(guild_id : int, state : bool):
         await session.close()
     pass
 
-async def on_interaction(self, element : discord.ui.Item, interaction : discord.Interaction):
+async def on_interaction(self, element: discord.ui.Item, interaction: discord.Interaction):
     if isinstance(element,discord.ui.Button):
         if element.label == "Enable":
             await change_vote_state(self.ctx.guild.id,True)
@@ -1273,8 +1273,8 @@ Voting_State = element_factory(
 
 #
 
-def set_override_embeds(guild : discord.Guild,embed : discord.Embed, overrides : dict[str,bool], field_name : str, getter : str):
-    with_objs : list[tuple[discord.Role,bool]] = []
+def set_override_embeds(guild: discord.Guild,embed: discord.Embed, overrides: dict[str,bool], field_name: str, getter: str):
+    with_objs: list[tuple[discord.Role,bool]] = []
     for obj_str, state in overrides.items():
         obj = getattr(guild,getter)(int(obj_str))
         if obj is None: continue
@@ -1295,7 +1295,7 @@ def set_override_embeds(guild : discord.Guild,embed : discord.Embed, overrides :
     embed.add_field(name="Override",value="\n".join(str_states) if len(str_roles) > 0 else "None")
     pass
 
-async def update_vote_override_embed(self : ConfigElement, override : Literal["role_overrides","channel_overrides"], field_name : str, getter : str):
+async def update_vote_override_embed(self: ConfigElement, override: Literal["role_overrides","channel_overrides"], field_name: str, getter: str):
     session = SESSION_FACTORY()
     try:
         sql_guild = await utils.get_guild(session,self.ctx.guild.id)
@@ -1306,7 +1306,7 @@ async def update_vote_override_embed(self : ConfigElement, override : Literal["r
     set_override_embeds(self.ctx.guild,self.embed,overrides,field_name,getter)
     pass
 
-async def add_override(guild_id : int, override : str, obj, state : bool):
+async def add_override(guild_id: int, override: str, obj, state: bool):
     session = SESSION_FACTORY()
     try:
         sql_guild = await utils.get_guild(session,guild_id)
@@ -1317,17 +1317,17 @@ async def add_override(guild_id : int, override : str, obj, state : bool):
         await session.close()
     pass
 
-async def override_gui(bot : commands.Bot, ctx : commands.Context, waiter, error_msg : str, override : str, state : bool):
+async def override_gui(bot: commands.Bot, ctx: commands.Context, waiter, error_msg: str, override: str, state: bool):
     obj = await waiter(bot,ctx,error_msg)
     await add_override(ctx.guild.id,override,obj,state)
     return obj
     pass
 
-async def override_role(bot : commands.Bot, ctx : commands.Context, state : bool) -> discord.Role:
+async def override_role(bot: commands.Bot, ctx: commands.Context, state: bool) -> discord.Role:
     return await override_gui(bot,ctx,utils.wait_for_role,"The message you sent could not be interpreted as a role.","role_overrides",state)
     pass
 
-async def override_rem(guild_id : int, override : str, obj):
+async def override_rem(guild_id: int, override: str, obj):
     session = SESSION_FACTORY()
     try:
         sql_guild = await utils.get_guild(session,guild_id)
@@ -1338,7 +1338,7 @@ async def override_rem(guild_id : int, override : str, obj):
         pass
     pass
 
-async def override_rem_gui(bot : commands.Bot, ctx : commands.Context, waiter, interaction : discord.Interaction, override : str, error_msg : str, not_exist_error : str):
+async def override_rem_gui(bot: commands.Bot, ctx: commands.Context, waiter, interaction: discord.Interaction, override: str, error_msg: str, not_exist_error: str):
     obj = await waiter(bot,ctx,error_msg)
     try:
         await override_rem(ctx.guild.id,override,obj)
@@ -1349,11 +1349,11 @@ async def override_rem_gui(bot : commands.Bot, ctx : commands.Context, waiter, i
     return obj
     pass
 
-async def update(self : ConfigElement):
+async def update(self: ConfigElement):
     await update_vote_override_embed(self,"role_overrides","Role","get_role")
     pass
 
-async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
+async def on_interaction(self: ConfigElement, element: discord.ui.Item, interaction: discord.Interaction):
     if not isinstance(element,discord.ui.Button): return
     if element.label == "Add deny override":
         await send_ephemeral(interaction,"Please send a message mentioning the role you want to add a deny override for.")
@@ -1387,15 +1387,15 @@ Voting_Role_Overrides = element_factory(
 
 #
 
-async def override_channel(bot : commands.Bot, ctx : commands.Context, state : bool):
+async def override_channel(bot: commands.Bot, ctx: commands.Context, state: bool):
     return await override_gui(bot,ctx,utils.wait_for_text_channel,"The message you sent could not be interpreted as a text channel.","channel_overrides",state)
     pass
 
-async def update(self : ConfigElement):
+async def update(self: ConfigElement):
     await update_vote_override_embed(self,"channel_overrides","Channel","get_channel")
     pass
 
-async def on_interaction(self : ConfigElement, element : discord.ui.Item, interaction : discord.Interaction):
+async def on_interaction(self: ConfigElement, element: discord.ui.Item, interaction: discord.Interaction):
     if not isinstance(element,discord.ui.Button): return
     if element.label == "Add deny override":
         await send_ephemeral(interaction,f"Please send a message mentioning the channel you wish to set a deny override for.")
@@ -1467,7 +1467,7 @@ Moderation.PARENT = Leveling.PARENT = Clones.PARENT = Announcement_Channel.PAREN
 @commands.command(name="config",brief="A UI command to configure Typhoon",description="A command providing all configuration possibilites of Typhoon in a neat UI")
 @commands.guild_only()
 @utils.perm_message_check("Configuration?! By you?! (No Permission)",manage_guild=True)
-async def config_cmd(ctx : commands.Context):
+async def config_cmd(ctx: commands.Context):
     embed = discord.Embed(title="Config",colour=discord.Colour.dark_gray())
     message = await ctx.send(embed=embed,ephemeral=True)
 
@@ -1476,7 +1476,7 @@ async def config_cmd(ctx : commands.Context):
     pass
 
 # Setup & Teardown
-def setup(bot : commands.Bot):
+def setup(bot: commands.Bot):
     global CONFIG
     global BOT, WEBHOOK_POOL
     global ENGINE, SESSION_FACTORY
@@ -1493,6 +1493,6 @@ def setup(bot : commands.Bot):
     bot.add_command(config_cmd)    
     pass
 
-def teardown(bot : commands.Bot):
+def teardown(bot: commands.Bot):
     bot.remove_command("config")
     pass

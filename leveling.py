@@ -15,14 +15,14 @@ from ormclasses import *
 MEE6_LEADERBOARD_FORMAT = "https://mee6.xyz/api/plugins/levels/leaderboard/{0}?page={1}"
 MEE6_AUTH_TOKEN = "ODE1M2Q4YzYwODAwMDI1.NjI3YWExY2E=.nZ5k9GdFav6qRyyv4doj-bAjdAc"
 
-CONFIG : config.Config = ...
-WEBHOOK_POOL : utils.WebhookPool = ...
+CONFIG: config.Config = ...
+WEBHOOK_POOL: utils.WebhookPool = ...
 
-BOT : commands.Bot = ...
-COG : commands.Cog = ...
+BOT: commands.Bot = ...
+COG: commands.Cog = ...
 
-SESSION_FACTORY : Sessionmaker = ...
-ENGINE : asql.AsyncEngine = ...
+SESSION_FACTORY: Sessionmaker = ...
+ENGINE: asql.AsyncEngine = ...
 
 GuildId = MemberId = RoleId = int
 
@@ -38,18 +38,18 @@ xp_to_progress = lambda level, xp: (((xp - level_to_xp(level)) / (level_to_xp(le
 class LevelStats:
     __slots__ = ("internal","timestamps")
     def __init__(self) -> None:
-        self.internal : dict[MemberId,tuple[int,int]] = {}
+        self.internal: dict[MemberId,tuple[int,int]] = {}
         """1. is xp, 2. is level"""
-        self.timestamps : dict[MemberId,int] = {}
+        self.timestamps: dict[MemberId,int] = {}
         pass
 
-    def __getitem__(self, indices : MemberId):
+    def __getitem__(self, indices: MemberId):
         if not isinstance(indices,MemberId): raise IndexError(f"Index is of type {indices.__class__}, expected type {MemberId}")
 
         return self.internal.get(indices,(0,0))
         pass
 
-    def __setitem__(self, indices : MemberId, value : tuple[int,int]):
+    def __setitem__(self, indices: MemberId, value: tuple[int,int]):
         if not isinstance(indices,MemberId): raise IndexError(f"Index is of type {indices.__class__}, expected type {MemberId}")
         if not isinstance(value,tuple) or not isinstance(value[0],int) or not isinstance(value[1],int): raise TypeError(f"value has to be of type tuple[int,int], is {type(value)}[{type(value[0])},{type(value[1])}]")
 
@@ -60,17 +60,17 @@ class LevelStats:
         return iter(self.internal.items())
         pass
 
-    def xp(self, target : MemberId) -> int:
+    def xp(self, target: MemberId) -> int:
         if not isinstance(target,MemberId): raise TypeError(f"Argument target is of type {type(target)}, expected type {MemberId}")
         return self.internal.get(target,(0,0))[0]
         pass
 
-    def level(self, target : MemberId) -> int:
+    def level(self, target: MemberId) -> int:
         if not isinstance(target,MemberId): raise TypeError(f"Argument target is of type {type(target)}, expected type {MemberId}")
         return self.internal.get(target,(0,0))[1]
         pass
 
-    def rank(self, target : MemberId) -> int:
+    def rank(self, target: MemberId) -> int:
         target_xp = self.xp(target)
         people_above = 0
         for _, xp in self.internal.values():
@@ -79,12 +79,12 @@ class LevelStats:
         return people_above + 1
         pass
 
-    def set(self, target : MemberId, xp : int, level : int,*,overwrite : bool = False) -> None:
+    def set(self, target: MemberId, xp: int, level: int,*,overwrite: bool = False) -> None:
         if not overwrite and target in self.internal.keys(): raise RuntimeError("set would have overriden a value and was stopped. If this is intentional, set overwrite to true")
         self.internal[target] = (xp,level)
         pass
 
-    def raise_xp(self, target : MemberId, xp_raise : int) -> tuple[int,int]:
+    def raise_xp(self, target: MemberId, xp_raise: int) -> tuple[int,int]:
         if not isinstance(target,MemberId): raise TypeError(f"target has to be of type {MemberId}, is {type(target)}")
         if not isinstance(xp_raise, int): raise TypeError(f"xp_raise has to be of type {int}, is {type(xp_raise)}")
         if xp_raise <= 0: raise ValueError(f"xp_raise has to be a positive integer, is {xp_raise}")
@@ -96,12 +96,12 @@ class LevelStats:
         self.set(target,xp,level,overwrite=True)
         pass
 
-    def check_can_gain(self,target : MemberId, timeout : float):
+    def check_can_gain(self,target: MemberId, timeout: float):
         return time.time() - self.timestamps.get(target,0) >= timeout
         pass
 
     @classmethod
-    def from_raw(cls, data : dict[MemberId,tuple[int,int]]):
+    def from_raw(cls, data: dict[MemberId,tuple[int,int]]):
         obj = cls()
         for target, (xp,level) in data.items():
             obj[int(target)] = (xp,level)
@@ -119,12 +119,12 @@ class LevelSettings:
     __slots__ = ("lower_gain","upper_gain","timeout", "enabled", "channel_id","level_msg")
     def __init__(
         self, 
-        enabled : bool = Guild.level_state.default.arg, 
-        lower_gain : int = Guild.lower_xp_gain.default.arg, 
-        upper_gain : int = Guild.upper_xp_gain.default.arg, 
-        timeout : int = Guild.xp_timeout.default.arg,
-        channel_id : Optional[int] = Guild.level_channel.default,
-        level_msg : str = Guild.level_msg.default.arg
+        enabled: bool = Guild.level_state.default.arg, 
+        lower_gain: int = Guild.lower_xp_gain.default.arg, 
+        upper_gain: int = Guild.upper_xp_gain.default.arg, 
+        timeout: int = Guild.xp_timeout.default.arg,
+        channel_id: Optional[int] = Guild.level_channel.default,
+        level_msg: str = Guild.level_msg.default.arg
         ):
         self.lower_gain = lower_gain
         self.upper_gain = upper_gain
@@ -134,7 +134,7 @@ class LevelSettings:
         self.level_msg = level_msg
         pass
 
-    async def save(self, guild_id : GuildId):
+    async def save(self, guild_id: GuildId):
         async with SESSION_FACTORY() as session:
             await session.execute(sql.update(Guild).where(Guild.id == str(guild_id)).values(lower_xp_gain=self.lower_gain,upper_xp_gain=self.upper_gain,xp_timeout=self.timeout,level_channel=str(self.channel_id)))
             await session.commit()
@@ -146,24 +146,24 @@ class RewardRoles:
     __slots__ = ("internal")
     def __init__(
         self,
-        raw : dict[RoleId,int]
+        raw: dict[RoleId,int]
         ):
-        self.internal : dict[RoleId,int] = {int(role_id):level for role_id, level in raw.items()}
+        self.internal: dict[RoleId,int] = {int(role_id):level for role_id, level in raw.items()}
         pass
 
-    def rewards_for_level(self,level : int) -> set[int]:
+    def rewards_for_level(self,level: int) -> set[int]:
         return {role_id for role_id, _ in filter(lambda item: item[1] == level,self.internal.items())}
         pass
     
-    def add_reward_role(self, role_id : int, level : int):
+    def add_reward_role(self, role_id: int, level: int):
         self.internal[role_id] = level
         pass
 
-    def remove_reward_role(self, role_id : int):
+    def remove_reward_role(self, role_id: int):
         self.internal.pop(role_id)
         pass
 
-    async def save(self, guild_id : GuildId):
+    async def save(self, guild_id: GuildId):
         async with SESSION_FACTORY() as session:
             await session.execute(sql.update(GuildLevels).where(GuildLevels.guild_id == str(guild_id)).values(rewards=self.internal))
             await session.commit()
@@ -174,9 +174,9 @@ class RewardRoles:
 
 class Leveling(commands.Cog):
     "A system which grants members points based on their activity"
-    LEVELS : dict[GuildId,LevelStats] = {}
-    LEVEL_SETTINGS : dict[GuildId,LevelSettings] = {}
-    REWARD_ROLES : dict[GuildId,RewardRoles] = {}
+    LEVELS: dict[GuildId,LevelStats] = {}
+    LEVEL_SETTINGS: dict[GuildId,LevelSettings] = {}
+    REWARD_ROLES: dict[GuildId,RewardRoles] = {}
 
     def __init__(self):
         super().__init__()
@@ -193,7 +193,7 @@ class Leveling(commands.Cog):
         self.sql_saver_task.stop()
         pass
 
-    async def send_levelup(self, message : discord.Message, level : int):
+    async def send_levelup(self, message: discord.Message, level: int):
         lvl_settings = self.LEVEL_SETTINGS[message.guild.id]
         levels = self.LEVELS[message.guild.id]
 
@@ -203,7 +203,7 @@ class Leveling(commands.Cog):
         await lvlup_channel.send(msg)
         pass
 
-    def get_reward_role_msg(self, member : discord.Member, role : discord.Role, i : int) -> str:
+    def get_reward_role_msg(self, member: discord.Member, role: discord.Role, i: int) -> str:
         if   i == 0: return f"Congratulations! You have leveled up and now have the role {role.name}!"
         elif i == 1: return f"What's this? Another role! It's {role.name}!"
         elif i == 2: return f"But wait, there's more! You receive... Another role! ({role.name})"
@@ -214,7 +214,7 @@ class Leveling(commands.Cog):
         else: return role.name
         pass
 
-    async def reward_roles_check(self, message : discord.Message, level : int):
+    async def reward_roles_check(self, message: discord.Message, level: int):
         self.REWARD_ROLES.setdefault(message.guild.id,RewardRoles({}))
         reward_roles = self.REWARD_ROLES[message.guild.id]
 
@@ -238,7 +238,7 @@ class Leveling(commands.Cog):
         pass
 
     @commands.Cog.listener("on_message")
-    async def xp_gain(self,message : discord.Message):
+    async def xp_gain(self,message: discord.Message):
         member = message.author
         guild  = message.guild
         
@@ -267,9 +267,9 @@ class Leveling(commands.Cog):
     @tasks.loop(count=1)
     async def leveling_collector(self):
         async with SESSION_FACTORY() as session:
-            result : CursorResult = await session.execute(sql.select(Guild))
+            result: CursorResult = await session.execute(sql.select(Guild))
             for sqlobj in result.scalars():
-                sqlobj : Guild
+                sqlobj: Guild
                 guild_id = int(sqlobj.id)
 
                 self.LEVEL_SETTINGS[guild_id] = LevelSettings(
@@ -282,9 +282,9 @@ class Leveling(commands.Cog):
                 )
                 pass
 
-            result : CursorResult = await session.execute(sql.select(GuildLevels))
+            result: CursorResult = await session.execute(sql.select(GuildLevels))
             for sqlobj in result.scalars():
-                sqlobj : GuildLevels
+                sqlobj: GuildLevels
                 guild_id = int(sqlobj.guild_id)
 
                 self.LEVELS[guild_id] = LevelStats.from_raw(sqlobj.levels)
@@ -296,7 +296,7 @@ class Leveling(commands.Cog):
 
     @app_commands.command(name="level")
     @app_commands.describe(user="The member to get the level and xp for. If unset it will default to yourself")
-    async def level_get(self, interaction: discord.Interaction, user : discord.Member = None):
+    async def level_get(self, interaction: discord.Interaction, user: discord.Member = None):
         lvl_settings = self.LEVEL_SETTINGS[interaction.guild_id]
 
         if not lvl_settings.enabled:
@@ -331,7 +331,7 @@ class Leveling(commands.Cog):
             levels = self.LEVELS.get(interaction.guild_id,LevelStats())
             return sorted(levels,key=lambda item:item[1][0],reverse=True)
             pass
-        sorted_iter : list[tuple[MemberId,tuple[int,int]]] = await asyncio.get_event_loop().run_in_executor(None,sort)
+        sorted_iter: list[tuple[MemberId,tuple[int,int]]] = await asyncio.get_event_loop().run_in_executor(None,sort)
         
 
         embed = discord.Embed(colour = discord.Colour.green(),title=f"Leaderboard of {interaction.guild.name}",timestamp=datetime.utcnow())
@@ -351,7 +351,7 @@ class Leveling(commands.Cog):
         pass
 
     async def mee6_import_worker(self, interaction: discord.Interaction):
-        async def get_info(session : aiohttp.ClientSession, page : int) -> tuple[int, dict, Union[dict,str]]:
+        async def get_info(session: aiohttp.ClientSession, page: int) -> tuple[int, dict, Union[dict,str]]:
             async with session.get(MEE6_LEADERBOARD_FORMAT.format(interaction.guild_id,page)) as resp:
                 return resp.status, resp.headers, await resp.json() if resp.content_type == "application/json" else await resp.text()
                 pass
@@ -390,13 +390,13 @@ class Leveling(commands.Cog):
         for stat in player_stats:
             p_id = stat["id"]
             p_xp = stat["xp"]
-            p_lvl= stat["level"]
+            p_lvl = stat["level"]
 
             typhoon_levels.set(int(p_id),int(p_xp),int(p_lvl),overwrite=True)
             pass
 
         async with SESSION_FACTORY() as session:
-            result : CursorResult = await session.execute(sql.select(GuildLevels).where(GuildLevels.guild_id == str(interaction.guild_id)))
+            result: CursorResult = await session.execute(sql.select(GuildLevels).where(GuildLevels.guild_id == str(interaction.guild_id)))
             try:
                 sqlobj = result.scalar_one()
             except KeyError:
@@ -412,7 +412,7 @@ class Leveling(commands.Cog):
         await interaction.followup.send("Level import complete! Check /leaderboard",ephemeral=True)
         pass
 
-    level_settings= app_commands.Group(name="level_settings", description="Commands to moderate the leveling system",
+    level_settings = app_commands.Group(name="level_settings", description="Commands to moderate the leveling system",
     guild_only=True, default_permissions=discord.Permissions(manage_guild=True))
 
     @level_settings.command(name="import_mee6",description="Import this servers level stats from the Mee6 Bot")
@@ -450,7 +450,7 @@ class Leveling(commands.Cog):
     async def sql_saver_task(self):
         async with SESSION_FACTORY() as session:
             for guild_id, stats in self.LEVELS.items():
-                sqlobj : GuildLevels = (await session.execute(sql.select(GuildLevels).where(GuildLevels.guild_id == str(guild_id)))).scalar_one_or_none()
+                sqlobj: GuildLevels = (await session.execute(sql.select(GuildLevels).where(GuildLevels.guild_id == str(guild_id)))).scalar_one_or_none()
                 if sqlobj is None:
                     sqlobj = GuildLevels(guild_id=str(guild_id))
                     sqlobj.levels = stats.to_raw()
@@ -466,7 +466,7 @@ class Leveling(commands.Cog):
     pass
 
 
-async def setup(bot : commands.Bot):
+async def setup(bot: commands.Bot):
     global CONFIG, WEBHOOK_POOL
     global BOT, COG
     global SESSION_FACTORY, ENGINE
@@ -486,5 +486,5 @@ async def setup(bot : commands.Bot):
     logging.info("Loaded Leveling extension!")
     pass
 
-async def teardown(bot : commands.Bot):
+async def teardown(bot: commands.Bot):
     pass

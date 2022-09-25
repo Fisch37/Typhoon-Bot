@@ -6,7 +6,7 @@ ALLOWED_SEPERATORS = "-./: "
 
 class OutOfOrderException(BadArgument): ...
 
-def dayDecideSep(argument : str) -> str:
+def dayDecideSep(argument: str) -> str:
     for char in ALLOWED_SEPERATORS: # Loop through every possible seperator
         if argument.count(char) == 2: # If it finds the right amount of seperators (like in 2021-02-31)
             return char
@@ -15,7 +15,7 @@ def dayDecideSep(argument : str) -> str:
     return "" # Return no seperator option if the previous ones didn't match
     pass
 
-def extractYYMMDDx(argument : str) -> tuple[int,int,int]:
+def extractYYMMDDx(argument: str) -> tuple[int,int,int]:
     seperator = dayDecideSep(argument) # Determine seperator for YYMMDDx format
     if seperator != "": # If found a not-none seperator, split on that one
         yearstr, monstr, daystr = argument.split(seperator,3)
@@ -23,19 +23,19 @@ def extractYYMMDDx(argument : str) -> tuple[int,int,int]:
     else: # Implement (YY)YYMMDDx
         daystr = argument[-2:]
         monstr = argument[-4:-2]
-        yearstr= argument[:-4]
+        yearstr = argument[:-4]
         pass
 
     return int(yearstr),int(monstr),int(daystr)
     pass
 
-def convert_day(day_arg : str) -> date:
+def convert_day(day_arg: str) -> date:
     year, month, day = extractYYMMDDx(day_arg)
     
     return date(year,month,day) # Assemble a date object
     pass
 
-def extract_time(time_arg : str) -> tuple[int,int,int,int]:
+def extract_time(time_arg: str) -> tuple[int,int,int,int]:
     time_split = time_arg.split(":",3)
     time_split.extend(["0"]*(3-len(time_split)))
 
@@ -51,7 +51,7 @@ def extract_time(time_arg : str) -> tuple[int,int,int,int]:
     return int(hstr), int(mstr), int(sstr), int(msstr) * (10**(3-len(msstr))) # Convert strings into integers (also parse milliseconds correctly so that ".15973" is 159.73ms)
     pass
 
-def convert_time(time_arg : str) -> time:
+def convert_time(time_arg: str) -> time:
     hour, minute, second, millisecond = extract_time(time_arg)
 
     return time(hour,minute,second,millisecond)
@@ -81,7 +81,7 @@ class TimeConverter(Converter):
     pass
 
 class PastTime(TimeConverter):
-    async def convert(self, ctx : Context, argument : str) -> datetime:
+    async def convert(self, ctx: Context, argument: str) -> datetime:
         obj = await super().convert(ctx,argument)
 
 
@@ -94,7 +94,7 @@ class PastTime(TimeConverter):
     pass
 
 class FutureTime(TimeConverter):
-    async def convert(self, ctx : Context, argument : str) -> datetime:
+    async def convert(self, ctx: Context, argument: str) -> datetime:
         obj = await super().convert(ctx,argument)
 
 
@@ -107,8 +107,8 @@ class FutureTime(TimeConverter):
     pass
 
 class DurationConverter(Converter):
-    async def convert(self, ctx : Context, argument : str) -> int:
-        def check_order(sequence : list) -> bool:
+    async def convert(self, ctx: Context, argument: str) -> int:
+        def check_order(sequence: list) -> bool:
             prev_element = None
             for element in sequence:
                 if prev_element is not None and not prev_element < element: return False

@@ -11,13 +11,13 @@ from discord import app_commands
 import sqlalchemy as sql, sqlalchemy.ext.asyncio as asql
 from ormclasses import *
 # Declare constants
-CONFIG : config.Config = ...
+CONFIG: config.Config = ...
 
-BOT : commands.Bot = ...
-WEBHOOK_POOL : utils.WebhookPool = ...
+BOT: commands.Bot = ...
+WEBHOOK_POOL: utils.WebhookPool = ...
 
-ENGINE : asql.AsyncEngine = ...
-SESSION_FACTORY : Sessionmaker = ...
+ENGINE: asql.AsyncEngine = ...
+SESSION_FACTORY: Sessionmaker = ...
 
 # Cog
 
@@ -31,7 +31,7 @@ class Example_Cog(commands.Cog):
     pass
 
 # Setup & Teardown
-async def setup(bot : commands.Bot):
+async def setup(bot: commands.Bot):
     global CONFIG
     global BOT, WEBHOOK_POOL
     global ENGINE, SESSION_FACTORY
@@ -48,6 +48,6 @@ async def setup(bot : commands.Bot):
     await bot.add_cog(Example_Cog())
     pass
 
-async def teardown(bot : commands.Bot):
+async def teardown(bot: commands.Bot):
     await bot.remove_cog("Example_Cog")
     pass
