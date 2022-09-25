@@ -8,6 +8,10 @@ import discord
 
 from ormclasses import *
 
+def unzip(iterable: Iterable) -> zip:
+    return zip(*iterable)
+    pass
+
 def first(sequence : Sequence[Any], matcher : Callable) -> Any:
     for element in sequence:
         if matcher(element): return element
@@ -234,7 +238,7 @@ async def get_guild(session : asql.AsyncSession, guild_id : int) -> Guild:
     return sql_guild
     pass
 
-def generate_snowflake(*,__inc__ = [0]): # __inc__ is a list because that means it will be stored across execution
+def generate_snowflake(*,__inc__ = [0]) -> int: # __inc__ is a list because that means it will be stored across execution
     """Generates a snowflake according to https://discord.com/developers/docs/reference#snowflakes"""
     if not isinstance(__inc__[0],int): raise TypeError("Cached increment is not an integer. You probably set it as something else. Don't")
 
@@ -302,4 +306,69 @@ async def wait_for_role(bot : commands.Bot, ctx : commands.Context, error_prompt
 
 async def wait_for_text_channel(bot : commands.Bot, ctx : commands.Context, error_prompt : str = "Passed argument was not a text channel", timeout : float = None, check = lambda msg: True) -> Optional[discord.TextChannel]:
     return await wait_for_convert(bot,ctx,commands.TextChannelConverter(),error_prompt,check,timeout)
+    pass
+
+def get_SingleSelectView(placeholder: str,options: list[discord.SelectOption], owner: discord.Member=None):
+    class SingleSelectView(discord.ui.View):
+        def __init__(self, *, timeout: Optional[float] = 180):
+            self.result = None
+            super().__init__(timeout=timeout)
+
+        @discord.ui.select(
+            placeholder=placeholder,
+            options=options
+        )
+        async def select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
+            if owner is not None and owner != interaction.user: 
+                return
+                
+            self.result = discord.utils.find(
+                lambda option: option.value == select.values[0],
+                options
+            )
+            self.stop()
+
+            await interaction.response.defer()
+            pass
+        pass
+
+    return SingleSelectView
+
+def get_SingleTextModal(
+    label: str,
+    style: discord.TextStyle=discord.TextStyle.short,
+    placeholder: str|None=None,
+    default: str|None=None,
+    min_length: int|None=None,
+    max_length: int|None=None,
+    
+    *,
+    required: bool=True
+):
+    class SingleTextModal(discord.ui.Modal):
+        completion_info = (None, None)
+
+        text_input = discord.ui.TextInput(
+            label=label, 
+            style=style,
+            placeholder=placeholder,
+            default=default,
+            required=required,
+            min_length=min_length,
+            max_length=max_length,
+            row=0
+        )
+
+        async def on_submit(self, interaction: discord.Interaction) -> None:
+            self.completion_info = (interaction, self.text_input.value)
+            pass
+
+        async def wait_for_results(self) -> tuple[discord.Interaction,str]|tuple[None,None]:
+            await self.wait()
+
+            return self.completion_info
+            pass
+        pass
+
+    return SingleTextModal
     pass

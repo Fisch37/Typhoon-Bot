@@ -172,7 +172,7 @@ async def main():
         async with BOT:
             await asyncio.gather(
                 BOT.load_extension("fun"),
-                # BOT.load_extension("utility"),
+                BOT.load_extension("utility"),
                 # BOT.load_extension("moderation"),
                 BOT.load_extension("leveling"),
                 
