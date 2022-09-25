@@ -135,12 +135,10 @@ class LevelSettings:
         pass
 
     async def save(self, guild_id : GuildId):
-        session : asql.AsyncSession = SESSION_FACTORY()
-        try:
+        async with SESSION_FACTORY() as session:
             await session.execute(sql.update(Guild).where(Guild.id == str(guild_id)).values(lower_xp_gain=self.lower_gain,upper_xp_gain=self.upper_gain,xp_timeout=self.timeout,level_channel=str(self.channel_id)))
             await session.commit()
-        finally:
-            await session.close()
+            pass
         pass
     pass
 
@@ -166,12 +164,9 @@ class RewardRoles:
         pass
 
     async def save(self, guild_id : GuildId):
-        session = SESSION_FACTORY()
-        try:
+        async with SESSION_FACTORY() as session:
             await session.execute(sql.update(GuildLevels).where(GuildLevels.guild_id == str(guild_id)).values(rewards=self.internal))
             await session.commit()
-        finally:
-            await session.close()
         pass
     pass
 
@@ -271,8 +266,7 @@ class Leveling(commands.Cog):
 
     @tasks.loop(count=1)
     async def leveling_collector(self):
-        session : asql.AsyncSession = SESSION_FACTORY()
-        try:
+        async with SESSION_FACTORY() as session:
             result : CursorResult = await session.execute(sql.select(Guild))
             for sqlobj in result.scalars():
                 sqlobj : Guild
@@ -296,8 +290,7 @@ class Leveling(commands.Cog):
                 self.LEVELS[guild_id] = LevelStats.from_raw(sqlobj.levels)
                 self.REWARD_ROLES[guild_id] = RewardRoles(sqlobj.rewards)
                 pass
-        finally:
-            await session.close()
+            pass
         pass
 
 
@@ -402,8 +395,7 @@ class Leveling(commands.Cog):
             typhoon_levels.set(int(p_id),int(p_xp),int(p_lvl),overwrite=True)
             pass
 
-        session : asql.AsyncSession = SESSION_FACTORY()
-        try:
+        async with SESSION_FACTORY() as session:
             result : CursorResult = await session.execute(sql.select(GuildLevels).where(GuildLevels.guild_id == str(interaction.guild_id)))
             try:
                 sqlobj = result.scalar_one()
@@ -415,9 +407,7 @@ class Leveling(commands.Cog):
             sqlobj.levels = typhoon_levels.to_raw()
             await session.commit()
             pass
-        finally:
-            await session.close()
-            pass
+        pass
 
         await interaction.followup.send("Level import complete! Check /leaderboard",ephemeral=True)
         pass
@@ -458,8 +448,7 @@ class Leveling(commands.Cog):
 
     @tasks.loop(minutes=1)
     async def sql_saver_task(self):
-        session : asql.AsyncSession = SESSION_FACTORY()
-        try:
+        async with SESSION_FACTORY() as session:
             for guild_id, stats in self.LEVELS.items():
                 sqlobj : GuildLevels = (await session.execute(sql.select(GuildLevels).where(GuildLevels.guild_id == str(guild_id)))).scalar_one_or_none()
                 if sqlobj is None:
@@ -472,8 +461,7 @@ class Leveling(commands.Cog):
                     pass
                 await session.commit()
                 pass
-        finally:
-            await session.close()
+            pass
         pass
     pass
 

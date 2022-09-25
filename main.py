@@ -130,25 +130,21 @@ async def main():
 
     @BOT.listen("on_guild_join")
     async def sql_creator(guild : discord.Guild):
-        session : asql.AsyncSession = SESSION_FACTORY()
-        try:
+        async with SESSION_FACTORY() as session:
             result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(guild.id)))
             if result.first() is None:
                 session.add(Guild(id=str(guild.id)))
                 await session.commit()
                 pass
-        finally:
-            await session.close()
+            pass
         pass
 
     @BOT.listen("on_guild_remove")
     async def sql_deleter(guild : discord.Guild):
-        session : asql.AsyncSession = SESSION_FACTORY()
-        try:
+        async with SESSION_FACTORY() as session:
             await session.execute(sql.delete(Guild).where(Guild.id == str(guild.id)))
             await session.commit()
-        finally:
-            await session.close()
+            pass
         pass
 
     @BOT.listen("on_command_error")
