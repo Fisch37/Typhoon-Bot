@@ -5,7 +5,7 @@ __all__ = (
 
     "Base",
     "Sessionmaker",
-    "CursorResult"
+    "CursorResult",
     
     "Guild",
     "ReactionRoles",
