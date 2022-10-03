@@ -18,9 +18,7 @@ ENGINE: asql.AsyncEngine = ...
 SESSION_FACTORY: Sessionmaker = ...
 
 TOKEN: str = ...
-BOT: commands.Bot = ...
-
-INVITE_LINK = "https://discord.com/oauth2/authorize?client_id=897055320646492231&scope=bot%20applications.commands&permissions=8"
+BOT: "Bot" = ...
 
 class DataStorage:
     pass
@@ -43,6 +41,8 @@ async def _sql_entry_creator(session, table, primary_key, value):
     pass
 
 class Bot(commands.Bot):
+    INVITE_LINK = "https://discord.com/oauth2/authorize?client_id={id}&scope=bot%20applications.commands&permissions=8"
+    
     __slots__= "working_guilds", 
     def __init__(self, *args,guild_ids = None, **kwargs):
         super().__init__(*args,**kwargs)
@@ -162,7 +162,9 @@ async def main():
         embed = discord.Embed(colour=discord.Colour.blue(),title="Hello!")
         embed.description = "Thanks for adding me to your server!\nThis bot runs with Slash Commands meaning you can use /help for a command list."
         embed.add_field(name="Support",value="[We also have a support server!](https://discord.gg/FCYvmXBXg6)",inline=False)
-        embed.add_field(name="Invite Link",value=f"If you need an invite link for this bot, use `/invite` or click [here]({INVITE_LINK})",inline=False)
+        embed.add_field(
+            name="Invite Link",
+            value=f"If you need an invite link for this bot, use `/invite` or click [here]({BOT.INVITE_LINK.format(id=BOT.user.id)})",inline=False)
 
         await channel.send(embed=embed)
         pass
