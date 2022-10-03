@@ -1,3 +1,4 @@
+# This is a list of joke activity that the bot will periodically select from
 import discord
 
 ACTIVITIES = (

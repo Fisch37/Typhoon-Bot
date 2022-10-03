@@ -11,18 +11,40 @@ from ormclasses import *
 import discord
 from discord.ext import commands
 
-CONFIG : cfg.Config = ...
+CONFIG: cfg.Config = ...
 CONFIG_FILE = "config.cfg"
 
-ENGINE : asql.AsyncEngine = ...
-SESSION_FACTORY : orm.sessionmaker = ...
+ENGINE: asql.AsyncEngine = ...
+SESSION_FACTORY: Sessionmaker = ...
 
-TOKEN : str = ...
-BOT : commands.Bot = ...
+TOKEN: str = ...
+BOT: commands.Bot = ...
 
 INVITE_LINK = "https://discord.com/oauth2/authorize?client_id=897055320646492231&scope=bot%20applications.commands&permissions=8"
 
 class DataStorage:
+    pass
+
+class Bot(commands.Bot):
+    __slots__= "working_guilds", 
+    def __init__(self, *args,guild_ids = None, **kwargs):
+        super().__init__(*args,**kwargs)
+
+        if guild_ids is not None:
+            self.working_guilds = [discord.Object(id=gid) for gid in guild_ids]
+            pass
+        pass
+
+    async def setup_hook(self) -> None:
+        if self.working_guilds is not None:
+            for guild in self.working_guilds:
+                self.tree.copy_global_to(guild=guild)
+                pass
+            pass
+
+        await self.tree.sync()
+        logging.info("Synced commands with Discord!")
+        pass
     pass
 
 def setCustomLogger(level = logging.INFO):
@@ -39,7 +61,7 @@ def setCustomLogger(level = logging.INFO):
     logging.getLogger().addHandler(stdoutLogger)
     pass
 
-def main():
+async def main():
     global CONFIG
     global ENGINE, SESSION_FACTORY
     global TOKEN, BOT
@@ -59,30 +81,15 @@ def main():
     
     ENGINE = asql.create_async_engine(CONFIG.DB_URL[1:-1],echo=False)
 
-    async def async_metacreate(): # Create all tables to make sure that they actually... exist
-        async with ENGINE.begin() as conn:
-            conn : asql.AsyncConnection
-            await conn.run_sync(Base.metadata.create_all)
-            pass
-        pass
-
     # Create bot instance
     logging.info("Creating bot application")
-    intents = discord.Intents(
-        guild_reactions=True,
-        guild_messages=True,
-        messages=True,
-        guilds=True,
-        members=True,
-        bans=True,
-        webhooks=True,
-        reactions=True,
-        invites=True,
-        emojis_and_stickers=True
-    )
+    intents = discord.Intents(3180143)
+    """This is the following configuration:
+    GUILDS, GUILD_MEMBERS, GUILD_BANS, GUILD_EMOJIS_AND_STICKERS, GUILD_WEBHOOKS, GUILD_INVITES, GUILD_MESSAGES, \
+        GUILD_MESSAGE_REACTIONS, MESSAGE_CONTENT,AUTO_MODERATION_CONFIGURATION, AUTO_MODERATION_EXECUTION"""
     if TESTING_MODE: guild_ids = (734461254747553823,)
     else: guild_ids = tuple()
-    BOT = commands.Bot("/",help_command=None,intents=intents,message_commands=True,slash_commands=True,slash_commands_guild=guild_ids,loop=loop,enable_debug_events=True)
+    BOT = Bot("/",help_command=None,intents=intents,guild_ids=guild_ids,loop=loop,enable_debug_events=True)
     BOT.tasks = set()
 
     BOT.ENGINE = ENGINE
@@ -90,7 +97,11 @@ def main():
     BOT.IS_TESTING = TESTING_MODE
 
     # Initialise ORM
-    loop.run_until_complete(async_metacreate())
+    async with ENGINE.begin() as conn: # Create all tables to make sure that they actually... exist
+        conn: asql.AsyncConnection
+        await conn.run_sync(Base.metadata.create_all)
+        pass
+
     SESSION_FACTORY = orm.sessionmaker(ENGINE,class_=asql.AsyncSession,expire_on_commit=False)
     BOT.SESSION_FACTORY = SESSION_FACTORY
 
@@ -106,7 +117,7 @@ def main():
         pass
 
     @BOT.listen("on_guild_join")
-    async def join_message(guild : discord.Guild):
+    async def join_message(guild: discord.Guild):
         channel = guild.system_channel or guild.public_updates_channel or guild.text_channels[0]
 
         embed = discord.Embed(colour=discord.Colour.blue(),title="Hello!")
@@ -118,31 +129,27 @@ def main():
         pass
 
     @BOT.listen("on_guild_join")
-    async def sql_creator(guild : discord.Guild):
-        session : asql.AsyncSession = SESSION_FACTORY()
-        try:
-            result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(guild.id)))
+    async def sql_creator(guild: discord.Guild):
+        async with SESSION_FACTORY() as session:
+            result: CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(guild.id)))
             if result.first() is None:
                 session.add(Guild(id=str(guild.id)))
                 await session.commit()
                 pass
-        finally:
-            await session.close()
+            pass
         pass
 
     @BOT.listen("on_guild_remove")
-    async def sql_deleter(guild : discord.Guild):
-        session : asql.AsyncSession = SESSION_FACTORY()
-        try:
+    async def sql_deleter(guild: discord.Guild):
+        async with SESSION_FACTORY() as session:
             await session.execute(sql.delete(Guild).where(Guild.id == str(guild.id)))
             await session.commit()
-        finally:
-            await session.close()
+            pass
         pass
 
     @BOT.listen("on_command_error")
-    async def command_error_catch(ctx : commands.Context, error : commands.CommandError):
-        cmd : commands.Command = ctx.invoked_subcommand or ctx.command
+    async def command_error_catch(ctx: commands.Context, error: commands.CommandError):
+        cmd: commands.Command = ctx.invoked_subcommand or ctx.command
         if isinstance(error,commands.errors.MissingPermissions) and hasattr(cmd.callback,"permission_error_msg"): # If utils.perm_message_check was used
             await ctx.send(cmd.callback.permission_error_msg,ephemeral=True)
             pass
@@ -157,18 +164,25 @@ def main():
             pass
         pass
 
-    BOT.load_extension("fun")
-    BOT.load_extension("utility")
-    BOT.load_extension("moderation")
-    BOT.load_extension("leveling")
-    
-    BOT.load_extension("help")
-    BOT.load_extension("config")
+    try:
+        async with BOT:
+            await asyncio.gather(
+                BOT.load_extension("fun"),
+                BOT.load_extension("utility"),
+                BOT.load_extension("moderation"),
+                BOT.load_extension("leveling"),
+                
+                BOT.load_extension("help_ext"),
+                BOT.load_extension("config"),
+            )
 
-    BOT.run(TOKEN)
-    asyncio.run(ENGINE.dispose())
+            await BOT.start(TOKEN)
+            pass
+    finally: 
+        await ENGINE.dispose()
+        pass
     pass
 
 if __name__=="__main__":
-    main()
+    asyncio.run(main())
     pass

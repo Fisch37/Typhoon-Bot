@@ -11,14 +11,14 @@ import os, logging, atexit
 COMMENT = "#"
 
 class Config:
-    def __init__(self, **kwargs : dict[str,Any]):
+    def __init__(self, **kwargs: dict[str,Any]):
         self.comments = {}
         for key, value in kwargs.items():
             setattr(self,key,value)
             pass
         pass
     @classmethod
-    def from_dict(cls,dictionary : dict[str,Any], comments : dict[int,str] = {}):
+    def from_dict(cls,dictionary: dict[str,Any], comments: dict[int,str] = {}):
         obj = Config(comments=comments)
         for key, value in dictionary.items():
             setattr(obj,key,value)
@@ -38,21 +38,21 @@ class Config:
         return "".join(("<Config object\n",("".join(lines)),">"))
     pass
 
-def __checkInt__(string : str):
+def __checkInt__(string: str):
     intAllowed = "0123456789-"
     return all([char in intAllowed for char in string])
     pass
 
-def __checkFloat__(string : str):
+def __checkFloat__(string: str):
     floatAllowed = "0123456789-."
     return all([char in floatAllowed for char in string])
     pass
 
-def __checkBool__(string : str):
+def __checkBool__(string: str):
     return string in ("true","false")
     pass
 
-def __convertBool__(string : str) -> bool:
+def __convertBool__(string: str) -> bool:
     if string == "true":
         return True
     elif string == "false":
@@ -60,7 +60,7 @@ def __convertBool__(string : str) -> bool:
     else:
         raise ValueError
 
-def __findComment__(string : str, start : int = 0):
+def __findComment__(string: str, start: int=0):
     commentIndex = start + 1
     stringIndex = start
     stringState = False
@@ -84,7 +84,7 @@ def __findComment__(string : str, start : int = 0):
     return commentIndex
     pass
 
-def __remComments__(string : str,newline : str = "\n") -> tuple[list[str],dict[int,str]]:
+def __remComments__(string: str,newline: str="\n") -> tuple[list[str],dict[int,str]]:
     lines = string.split(newline)
     comments = {}
     for i in range(len(lines)):
@@ -99,15 +99,15 @@ def __remComments__(string : str,newline : str = "\n") -> tuple[list[str],dict[i
     return lines, comments
     pass
 
-def load(file : Union[str, os.PathLike, int], autoClose : bool = True, encoding : str = None, errors : str = None, newline : str =None, closefd : bool = True,opener = None, create_new : bool = False) -> Config:
-    convertors : dict[Callable, Callable] = {
-        __checkInt__   : int,
-        __checkFloat__ : float,
-        __checkBool__  : __convertBool__
+def load(file: Union[str, os.PathLike, int], autoClose: bool=True, encoding: str=None, errors: str=None, newline: str =None, closefd: bool=True,opener=None, create_new: bool=False) -> Config:
+    convertors: dict[Callable, Callable] = {
+        __checkInt__  :int,
+        __checkFloat__:float,
+        __checkBool__ :__convertBool__
     }
     if create_new and not os.path.exists(file): open(file,"x").close()
 
-    dictionary : dict[str, Any] = {}
+    dictionary: dict[str, Any] = {}
     with open(file,"r",encoding=encoding,errors=errors,newline=newline,closefd=closefd,opener=opener) as fileObj:
         content = fileObj.read()
         pass
@@ -133,7 +133,7 @@ def load(file : Union[str, os.PathLike, int], autoClose : bool = True, encoding 
     return cfg
     pass
 
-def save(file : Union[str, os.PathLike, int], cfg : Config,exist_ok : bool = True) -> int:
+def save(file: Union[str, os.PathLike, int], cfg: Config,exist_ok : bool=True) -> int:
     logging.debug(f"Saving config file to {file}")
     if not exist_ok and os.path.exists(file):
         raise FileExistsError
