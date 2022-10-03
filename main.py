@@ -25,6 +25,23 @@ INVITE_LINK = "https://discord.com/oauth2/authorize?client_id=897055320646492231
 class DataStorage:
     pass
 
+async def _sql_entry_creator(session, table, primary_key, value):
+    # This function is a high-arbitration of several other pieces of code
+    # It checks for the existance of a table entry and
+    # if the entry does not exist, creates it
+    result = await session.execute(
+        sql.select(getattr(table,primary_key)).
+        where(
+            sql.select(getattr(table,primary_key)).
+            where(getattr(table,primary_key) == value).
+            exists()
+        )
+    )
+    if result.scalar() is not None:
+        session.add(table(**{primary_key:value}))
+        pass
+    pass
+
 class Bot(commands.Bot):
     __slots__= "working_guilds", 
     def __init__(self, *args,guild_ids = None, **kwargs):
@@ -32,6 +49,26 @@ class Bot(commands.Bot):
 
         if guild_ids is not None:
             self.working_guilds = [discord.Object(id=gid) for gid in guild_ids]
+            pass
+        pass
+
+    async def sql_entry_maker(self):
+        tasks = []
+        def task_wrapping(*args):
+            tasks.append(asyncio.create_task(_sql_entry_creator(*args)))
+            pass
+
+        async with SESSION_FACTORY() as session:
+            async for guild in self.fetch_guilds(limit=None):
+                task_wrapping(session,Guild,"id",str(guild.id))
+                task_wrapping(session,GuildWarning,"guild_id",str(guild.id))
+                task_wrapping(session,GuildLevels,"guild_id",str(guild.id))
+                task_wrapping(session,ScheduledMessages,"guild_id",str(guild.id))
+                pass
+
+            await asyncio.gather(*tasks)
+
+            await session.commit()
             pass
         pass
 
@@ -44,6 +81,8 @@ class Bot(commands.Bot):
 
         await self.tree.sync()
         logging.info("Synced commands with Discord!")
+        
+        await self.sql_entry_maker()
         pass
     pass
 
