@@ -8,7 +8,11 @@ import discord
 
 from ormclasses import *
 
-def first(sequence : Sequence[Any], matcher : Callable) -> Any:
+def unzip(iterable: Iterable) -> zip:
+    return zip(*iterable)
+    pass
+
+def first(sequence: Sequence[Any], matcher: Callable) -> Any:
     for element in sequence:
         if matcher(element): return element
         pass
@@ -16,7 +20,7 @@ def first(sequence : Sequence[Any], matcher : Callable) -> Any:
     raise ValueError("No match found")
     pass
 
-def stringFromDuration(seconds : int):
+def stringFromDuration(seconds: int):
     minutes = seconds // 60
     seconds%=60
     
@@ -26,7 +30,7 @@ def stringFromDuration(seconds : int):
     return f"{hours}H {minutes}M {seconds}S"
     pass
 
-def durationFromString(text : str) -> int:
+def durationFromString(text: str) -> int:
     hourPoint = text.find("H")
     minPoint  = text.find("M")
     secPoint = text.find("S")
@@ -38,7 +42,7 @@ def durationFromString(text : str) -> int:
     return hours*3600 + minutes*60 + seconds
     pass
 
-def setCustomLogger(level = logging.INFO):
+def setCustomLogger(level=logging.INFO):
     if not os.path.exists('logs'):
         os.mkdir("logs")
 
@@ -51,7 +55,7 @@ def setCustomLogger(level = logging.INFO):
     stdoutLogger.setFormatter(logging.Formatter(formatStr))
     logging.getLogger().addHandler(stdoutLogger)
 
-def call_once(func : Callable):
+def call_once(func: Callable):
     func.__was_called__ = False
 
     def wrapper(*args,**kwargs):
@@ -65,7 +69,7 @@ def call_once(func : Callable):
     return wrapper
     pass
 
-def call_once_async(func : Callable):
+def call_once_async(func: Callable):
     func.__was_called__ = False
 
     async def wrapper(*args,**kwargs):
@@ -79,8 +83,8 @@ def call_once_async(func : Callable):
     return wrapper
     pass
 
-def perm_message_check(error_msg : str = "No Permission",**perms : bool):
-    def decorator(func : Callable):
+def perm_message_check(error_msg: str="No Permission",**perms: bool):
+    def decorator(func: Callable):
         func.permission_error_msg = error_msg
         return commands.has_permissions(**perms)(func)
         pass
@@ -88,23 +92,23 @@ def perm_message_check(error_msg : str = "No Permission",**perms : bool):
     return decorator
     pass
 
-async def confirmation_interact(ctx : commands.Context, question : str = "Are you sure you want to do this?", confirm_option : str = "Confirm",*,timeout : float =180) -> bool:
+async def confirmation_interact(interaction: discord.Interaction, question: str="Are you sure you want to do this?", confirm_option: str="Confirm",*,timeout: float =180) -> bool:
     class Confirmation(discord.ui.View):
         def __init__(view, *, timeout: Optional[float] = 180):
             view.response = False
             super().__init__(timeout=timeout)
 
         @discord.ui.button(label=confirm_option,style=discord.ButtonStyle.danger)
-        async def confirm(view, button, interaction : discord.Interaction):
-            await interaction.response.defer()
+        async def confirm(view, vinteraction: discord.Interaction, button):
+            await vinteraction.response.defer()
 
             view.response = True
             view.stop()
             pass
 
         @discord.ui.button(label="Cancel",style=discord.ButtonStyle.green)
-        async def cancel(view, button, interaction : discord.Interaction):
-            await interaction.response.defer()
+        async def cancel(view, vinteraction: discord.Interaction, button):
+            await vinteraction.response.defer()
 
             view.response = False
             view.stop()
@@ -112,11 +116,27 @@ async def confirmation_interact(ctx : commands.Context, question : str = "Are yo
         pass
 
     view = Confirmation(timeout=timeout)
-    msg = await ctx.send(question,view=view,ephemeral=True)
+    msg = await interaction.followup.send(question,view=view,ephemeral=True)
     
     timed_out = await view.wait()
     await msg.edit(content="Interaction completed. You can close this message now",view=None)
     return (not timed_out) and view.response
+    pass
+
+def _view_set_all_able_state(view: discord.ui.View, state: bool):
+    for item in view.children:
+        if type(item) in (discord.ui.Select, discord.ui.Button):
+            item.disabled = state
+            pass
+        pass
+    pass
+
+def view_enable_all(view: discord.ui.View):
+    _view_set_all_able_state(view,False)
+    pass
+
+def view_disable_all(view: discord.ui.View):
+    _view_set_all_able_state(view,True)
     pass
 
 class Singleton:
@@ -130,7 +150,7 @@ class Singleton:
         pass
     pass
 
-def stringFilter(name : str, matcher : str) -> bool:
+def stringFilter(name: str, matcher: str) -> bool:
     star_wildcard = -1 # Marks the place at which a * wildcard was found
     j = 0
     for i in range(len(name)):
@@ -158,7 +178,7 @@ def stringFilter(name : str, matcher : str) -> bool:
     return j >= len(matcher)
     pass
 
-def colourFromString(hex_string : str) -> discord.Colour:
+def colourFromString(hex_string: str) -> discord.Colour:
     hex_string = hex_string.strip()
     if len(hex_string) != 6: raise ValueError()
     red   = int(hex_string[0:2],base=16)
@@ -168,19 +188,19 @@ def colourFromString(hex_string : str) -> discord.Colour:
     return discord.Colour.from_rgb(red,green,blue)
     pass
 
-def set_component_state_recursive(view_or_row : Union[discord.ui.View,discord.ActionRow],state : bool):
+def set_component_state_recursive(view_or_row: Union[discord.ui.View,discord.ActionRow],state: bool):
     for child in view_or_row.children:
         if isinstance(child,discord.ActionRow):
             set_component_state_recursive(child)
             pass
         else:
-            child : discord.Component
+            child: discord.Component
             child.disabled = not state
             pass
         pass
     pass
 
-def getButtonByLabel(view : discord.ui.View,label : str) -> Optional[discord.Button]:
+def getButtonByLabel(view: discord.ui.View,label: str) -> Optional[discord.Button]:
     for child in view.children:
         if not isinstance(child,discord.ui.Button): continue
         if child.label == label: return child
@@ -188,20 +208,20 @@ def getButtonByLabel(view : discord.ui.View,label : str) -> Optional[discord.But
     return None
     pass
 
-def selectOptionByValue(select : discord.ui.Select, name : str):
+def selectOptionByValue(select: discord.ui.Select, name: str):
     for option in select.options:
         if option.value == name: return option
         pass
     pass
 
 class WebhookPool:
-    def __init__(self, bot : commands.Bot):
-        self.pool : dict[int,dict[int,discord.Webhook]] = {}
+    def __init__(self, bot: commands.Bot):
+        self.pool: dict[int,dict[int,discord.Webhook]] = {}
         self._initialized = False
         self._bot = bot
         pass
 
-    async def get(self, channel : discord.TextChannel,*,reason : str = "New Webhook gathered from pool") -> discord.Webhook:
+    async def get(self, channel: discord.TextChannel,*,reason: str="New Webhook gathered from pool") -> discord.Webhook:
         if not channel.guild.id in self.pool.keys():
             self.pool[channel.guild.id] = {}
             pass
@@ -223,8 +243,8 @@ class WebhookPool:
         pass
     pass
 
-async def get_guild(session : asql.AsyncSession, guild_id : int) -> Guild:
-    result : CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(guild_id)))
+async def get_guild(session: asql.AsyncSession, guild_id: int) -> Guild:
+    result: CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(guild_id)))
     sql_guild = result.scalar_one_or_none()
     if sql_guild is None:
         sql_guild = Guild(id=str(guild_id))
@@ -234,7 +254,7 @@ async def get_guild(session : asql.AsyncSession, guild_id : int) -> Guild:
     return sql_guild
     pass
 
-def generate_snowflake(*,__inc__ = [0]): # __inc__ is a list because that means it will be stored across execution
+def generate_snowflake(*,__inc__=[0]) -> int: # __inc__ is a list because that means it will be stored across execution
     """Generates a snowflake according to https://discord.com/developers/docs/reference#snowflakes"""
     if not isinstance(__inc__[0],int): raise TypeError("Cached increment is not an integer. You probably set it as something else. Don't")
 
@@ -275,9 +295,15 @@ class FloatConverter(ValueErrorConverter):
     _CONVERTER = float
     pass
 
-async def wait_for_convert(bot : commands.Bot, ctx : commands.Context, converter : commands.Converter, error_prompt : str = "Passed argument could not be converted", check = lambda val: True, timeout : float = None) -> Optional[Any]:
+async def wait_for_convert(
+    bot: commands.Bot, 
+    ctx: commands.Context, 
+    converter: commands.Converter, 
+    error_prompt: str="Passed argument could not be converted", 
+    check=lambda val: True, timeout: float=None
+) -> Optional[Any]:
     while True:
-        resp_msg : discord.Message = await bot.wait_for("message",check=lambda msg: msg.author == ctx.author and msg.channel == ctx.channel,timeout=timeout)
+        resp_msg: discord.Message = await bot.wait_for("message",check=lambda msg: msg.author == ctx.author and msg.channel == ctx.channel,timeout=timeout)
         try:
             obj = await converter.convert(ctx,resp_msg.content)
         except commands.CommandError:
@@ -296,10 +322,86 @@ async def wait_for_convert(bot : commands.Bot, ctx : commands.Context, converter
     return obj
     pass
 
-async def wait_for_role(bot : commands.Bot, ctx : commands.Context, error_prompt : str = "Passed argument was not a role", check = lambda msg: True,timeout : float = None) -> Optional[discord.Role]:
+async def wait_for_role(
+    bot: commands.Bot, 
+    ctx: commands.Context, 
+    error_prompt: str="Passed argument was not a role", 
+    check=lambda msg: True,timeout: float=None
+) -> Optional[discord.Role]:
     return await wait_for_convert(bot,ctx,commands.RoleConverter(),error_prompt,check,timeout)
     pass
 
-async def wait_for_text_channel(bot : commands.Bot, ctx : commands.Context, error_prompt : str = "Passed argument was not a text channel", timeout : float = None, check = lambda msg: True) -> Optional[discord.TextChannel]:
+async def wait_for_text_channel(
+    bot: commands.Bot, 
+    ctx: commands.Context, 
+    error_prompt: str="Passed argument was not a text channel", 
+    timeout: float=None, 
+    check=lambda msg: True
+) -> Optional[discord.TextChannel]:
     return await wait_for_convert(bot,ctx,commands.TextChannelConverter(),error_prompt,check,timeout)
+    pass
+
+def get_SingleSelectView(placeholder: str,options: list[discord.SelectOption], owner: discord.Member=None):
+    class SingleSelectView(discord.ui.View):
+        def __init__(self, *, timeout: Optional[float] = 180):
+            self.result = None
+            super().__init__(timeout=timeout)
+
+        @discord.ui.select(
+            placeholder=placeholder,
+            options=options
+        )
+        async def select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
+            if owner is not None and owner != interaction.user: 
+                return
+                
+            self.result = discord.utils.find(
+                lambda option: option.value == select.values[0],
+                options
+            )
+            self.stop()
+
+            await interaction.response.defer()
+            pass
+        pass
+
+    return SingleSelectView
+
+def get_SingleTextModal(
+    label: str,
+    style: discord.TextStyle=discord.TextStyle.short,
+    placeholder: str|None=None,
+    default: str|None=None,
+    min_length: int|None=None,
+    max_length: int|None=None,
+    
+    *,
+    required: bool=True
+):
+    class SingleTextModal(discord.ui.Modal):
+        completion_info = (None, None)
+
+        text_input = discord.ui.TextInput(
+            label=label, 
+            style=style,
+            placeholder=placeholder,
+            default=default,
+            required=required,
+            min_length=min_length,
+            max_length=max_length,
+            row=0
+        )
+
+        async def on_submit(self, interaction: discord.Interaction) -> None:
+            self.completion_info = (interaction, self.text_input.value)
+            pass
+
+        async def wait_for_results(self) -> tuple[discord.Interaction,str]|tuple[None,None]:
+            await self.wait()
+
+            return self.completion_info
+            pass
+        pass
+
+    return SingleTextModal
     pass
