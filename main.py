@@ -37,7 +37,7 @@ async def _sql_entry_creator(session, table, primary_key, value):
             exists()
         )
     )
-    if result.scalar() is not None:
+    if result.scalar() is None:
         session.add(table(**{primary_key:value}))
         pass
     pass
