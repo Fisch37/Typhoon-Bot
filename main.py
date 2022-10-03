@@ -18,20 +18,57 @@ ENGINE: asql.AsyncEngine = ...
 SESSION_FACTORY: Sessionmaker = ...
 
 TOKEN: str = ...
-BOT: commands.Bot = ...
-
-INVITE_LINK = "https://discord.com/oauth2/authorize?client_id=897055320646492231&scope=bot%20applications.commands&permissions=8"
+BOT: "Bot" = ...
 
 class DataStorage:
     pass
 
+async def _sql_entry_creator(session, table, primary_key, value):
+    # This function is a high-arbitration of several other pieces of code
+    # It checks for the existance of a table entry and
+    # if the entry does not exist, creates it
+    result = await session.execute(
+        sql.select(getattr(table,primary_key)).
+        where(
+            sql.select(getattr(table,primary_key)).
+            where(getattr(table,primary_key) == value).
+            exists()
+        )
+    )
+    if result.scalar() is None:
+        session.add(table(**{primary_key:value}))
+        pass
+    pass
+
 class Bot(commands.Bot):
+    INVITE_LINK = "https://discord.com/oauth2/authorize?client_id={id}&scope=bot%20applications.commands&permissions=8"
+    
     __slots__= "working_guilds", 
     def __init__(self, *args,guild_ids = None, **kwargs):
         super().__init__(*args,**kwargs)
 
         if guild_ids is not None:
             self.working_guilds = [discord.Object(id=gid) for gid in guild_ids]
+            pass
+        pass
+
+    async def sql_entry_maker(self):
+        tasks = []
+        def task_wrapping(*args):
+            tasks.append(asyncio.create_task(_sql_entry_creator(*args)))
+            pass
+
+        async with SESSION_FACTORY() as session:
+            async for guild in self.fetch_guilds(limit=None):
+                task_wrapping(session,Guild,"id",str(guild.id))
+                task_wrapping(session,GuildWarning,"guild_id",str(guild.id))
+                task_wrapping(session,GuildLevels,"guild_id",str(guild.id))
+                task_wrapping(session,ScheduledMessages,"guild_id",str(guild.id))
+                pass
+
+            await asyncio.gather(*tasks)
+
+            await session.commit()
             pass
         pass
 
@@ -44,6 +81,8 @@ class Bot(commands.Bot):
 
         await self.tree.sync()
         logging.info("Synced commands with Discord!")
+        
+        await self.sql_entry_maker()
         pass
     pass
 
@@ -123,7 +162,9 @@ async def main():
         embed = discord.Embed(colour=discord.Colour.blue(),title="Hello!")
         embed.description = "Thanks for adding me to your server!\nThis bot runs with Slash Commands meaning you can use /help for a command list."
         embed.add_field(name="Support",value="[We also have a support server!](https://discord.gg/FCYvmXBXg6)",inline=False)
-        embed.add_field(name="Invite Link",value=f"If you need an invite link for this bot, use `/invite` or click [here]({INVITE_LINK})",inline=False)
+        embed.add_field(
+            name="Invite Link",
+            value=f"If you need an invite link for this bot, use `/invite` or click [here]({BOT.INVITE_LINK.format(id=BOT.user.id)})",inline=False)
 
         await channel.send(embed=embed)
         pass

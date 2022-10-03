@@ -838,6 +838,11 @@ class Utility(commands.Cog):
     SCHEDULED_MSGS: dict[GuildId,dict[str,ScheduledMessage]]                                       = {}
     REACTION_ROLES: ReactionRolesDict                                                              = {}
 
+    @app_commands.command(name="invite",description="Get a link to add me to your server!")
+    async def invite(self, interaction: discord.Interaction):
+        await interaction.response.send_message(f"Thanks for wanting to add me to your server! It means a lot!\nPlease click [here]({BOT.INVITE_LINK.format(id=BOT.user.id)})",ephemeral=True)
+        pass
+
     @app_commands.command(name="roll",description="Roll a dice!")
     @app_commands.describe(die="The dice to roll. (e.g. 10d8+5d6)", sort="Set to true, to sort the results")
     async def roll_dice(
