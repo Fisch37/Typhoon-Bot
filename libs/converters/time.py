@@ -128,6 +128,9 @@ class DurationConverter(Converter):
             pass
 
         try:
+            if all([pos==-1 for pos in (d_pos,h_pos,m_pos,s_pos)]): 
+                # This is basically: if the format is completely invalid
+                raise ValueError
             return arg_interpret(0,d_pos)*(60*60*24) + arg_interpret(d_pos,h_pos)*(60*60) + arg_interpret(h_pos,m_pos)*60 + arg_interpret(m_pos,s_pos)
         except ValueError:
             raise BadArgument("Number could not be interpreted")

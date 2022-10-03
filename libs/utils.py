@@ -123,6 +123,22 @@ async def confirmation_interact(interaction: discord.Interaction, question: str=
     return (not timed_out) and view.response
     pass
 
+def _view_set_all_able_state(view: discord.ui.View, state: bool):
+    for item in view.children:
+        if type(item) in (discord.ui.Select, discord.ui.Button):
+            item.disabled = state
+            pass
+        pass
+    pass
+
+def view_enable_all(view: discord.ui.View):
+    _view_set_all_able_state(view,False)
+    pass
+
+def view_disable_all(view: discord.ui.View):
+    _view_set_all_able_state(view,True)
+    pass
+
 class Singleton:
     """Inherit from this class to create a Singleton instance"""
     _instances = dict()

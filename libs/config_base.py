@@ -5,6 +5,7 @@ from typing import Any, Iterable, Optional, Union, Callable, Coroutine
 import discord, discord.ui
 from discord.ext import commands
 import asyncio, dataclasses, logging, time
+from . import utils
 
 async def close_confirm(interaction: discord.Interaction):
     will_close = [False] # Global-local issues again...
@@ -174,7 +175,21 @@ class ConfigBase:
     def add_callbacks(self,*, items: Optional[Iterable[discord.ui.Item]]=None):
         def create_handler(child):
             async def handle(interaction):
-                await self.on_view_interaction(child,interaction)
+                utils.view_disable_all(self.view)
+                await self.message.edit(view=self.view)
+                # Doing this in parallel might RACE with things happening in on_view_interaction
+                # E.g. in ConfigBranch
+
+                try:
+                    await self.on_view_interaction(child,interaction)
+                finally:
+                    if self.view is not None:
+                        # The view may be none if this happens in a config branch
+                        # (When switching to a different branch the view is briefly None)
+                        utils.view_enable_all(self.view)
+                        await self.message.edit(view=self.view)
+                        pass
+                    pass
                 pass
 
             return handle

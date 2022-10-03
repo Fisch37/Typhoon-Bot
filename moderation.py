@@ -37,20 +37,32 @@ async def get_warnings(session: asql.AsyncSession, guild_id: int):
 
 uppercase_fraction = lambda text: sum([int(char.isupper()) for char in text])/len(text)
 def emoji_fraction(message: discord.Message) -> float:
-    emoji_count = emoji.emoji_count(message.clean_content)
+    content = message.clean_content
+    content = content.replace(" ","")
 
-    investigation_text = message.clean_content
+    emoji_count = emoji.emoji_count(content)
+
+    investigation_text = content
+    custom_emoji_count = 0
+    search_position = 0
     for emoji_obj in message.guild.emojis:
         emoji_str = str(emoji_obj)
         while True:
-            before, this, after = investigation_text.partition(emoji_str)
-            if this == "": break
-            investigation_text = before + after
+            i_start = investigation_text.find(emoji_str,search_position)
+            if i_start == -1: break
+
+            i_end = i_start + len(emoji_str)
+            
+            
+            investigation_text = investigation_text[:i_start] + investigation_text[i_end:]
+            search_position = i_start
             emoji_count += 1
+            custom_emoji_count += 1
             pass
         pass
 
-    visual_length = emoji_count + len(investigation_text)
+    visual_length = len(investigation_text) + custom_emoji_count
+    # Basically, everything that is not a custom emoji + custom emojis
     return emoji_count/visual_length
     pass
 
@@ -239,7 +251,7 @@ class Warn:
     pass
 
 
-GuildId = ChannelId = RoleId = MemberId = int
+MessageId = GuildId = ChannelId = RoleId = MemberId = int
 Capsspam = Spamspam = Emotespam = bool
 JSONMemberId = str
 
@@ -247,6 +259,79 @@ MuteInf = list[int,str]
 MuteDict = dict[JSONMemberId,MuteInf]
 
 # Cog
+AUTOMOD_RULE_COUNT = 3
+class AutomodSync:
+    __slots__ = (
+        "synchronizers",
+    )
+
+    class _Synchronizer:
+        __slots__ = (
+            "_handle_count",
+            "_was_deleted",
+            "_msg_id",
+            "_outer_synchronizer_storage",
+            "_is_removed"
+        )
+
+        def __init__(
+            self, 
+            outer_synchronizer_storage,
+            message_id: MessageId
+        ):
+            self._handle_count = 0
+            self._was_deleted = False
+            self._is_removed = False
+            
+            self._msg_id = message_id
+
+            self._outer_synchronizer_storage = outer_synchronizer_storage
+            pass
+
+        def __enter__(self) -> None:
+            self._handle_count += 1
+            return self
+            pass
+
+        def __exit__(self, *_) -> None:
+            if self._handle_count == AUTOMOD_RULE_COUNT:
+                # If every listener passed the synchronized message
+                if not self._is_removed:
+                    self._outer_synchronizer_storage.pop(self._msg_id)
+                    # Removes self from AutomodSyncs register, 
+                    # since it will never be used again
+                    self._is_removed = True
+                    pass
+                pass
+            pass
+
+        def register_delete(self) -> None:
+            self._was_deleted = True
+            pass
+
+        def may_delete(self) -> bool:
+            return not self._was_deleted
+            pass
+        pass
+
+    def __init__(self):
+        self.synchronizers: dict[MessageId,AutomodSync._Synchronizer] = {}
+        pass
+
+    def sync(self, message_id: MessageId):
+        try:
+            synchronizer = self.synchronizers[message_id]
+        except KeyError:
+            synchronizer = self._Synchronizer(
+                self.synchronizers,
+                message_id
+            )
+            self.synchronizers[message_id] = synchronizer
+            pass
+
+        return synchronizer
+        pass
+    pass
 
 class Moderation(commands.Cog):
     """A tool for... well moderation"""
@@ -260,6 +345,7 @@ class Moderation(commands.Cog):
     LOGGING_SETTINGS: dict[GuildId, LoggingSettings]
 
     LAST_MESSAGES: dict[GuildId,dict[ChannelId,dict[MemberId,list[Optional[str],int]]]] = {}
+    AUTOMOD_HANDLING_SYNC = AutomodSync()
 
     def __init__(self):
         # Calling the class is necessary here because otherwise Python will do ~weird~ stuf
@@ -287,9 +373,15 @@ class Moderation(commands.Cog):
         return len(self.GOD_ROLES[member.guild.id].intersection({str(role.id) for role in member.roles})) > 0
         pass
 
-    async def spam_actions(self, message: discord.Message, settings: ModConfig):
+
+    async def spam_actions(self, 
+        message: discord.Message, 
+        settings: ModConfig, 
+        synchronizer: AutomodSync._Synchronizer
+    ):
         response = "Is there an echo in here? (Spam Automod)"
-        if settings.spam_consequence[0]:
+        if settings.spam_consequence[0] and synchronizer.may_delete():
+            synchronizer.register_delete()
             await message.delete()
             pass
         if settings.caps_consequence[1]:
@@ -302,9 +394,14 @@ class Moderation(commands.Cog):
         add_logging_event(Event(Event.AUTOMOD_SPAM,message.guild,{"message":message,"member":message.author}))
         pass
 
-    async def caps_actions(self, message: discord.Message, settings: ModConfig):
+    async def caps_actions(self, 
+        message: discord.Message, 
+        settings: ModConfig, 
+        synchronizer: AutomodSync._Synchronizer
+    ):
         response = "Could you please quiet down a little? This is not a rock concert! (Caps Automod)"
-        if settings.caps_consequence[0]:
+        if settings.caps_consequence[0] and synchronizer.may_delete():
+            synchronizer.register_delete()
             await message.delete()
             pass
         if settings.caps_consequence[1]:
@@ -317,15 +414,20 @@ class Moderation(commands.Cog):
         add_logging_event(Event(Event.AUTOMOD_CAPS,message.guild,{"message":message,"member":message.author}))
         pass
 
-    async def emoji_actions(self, message: discord.Message, settings: ModConfig):
-        response = "Wow there! Don't get overly emotional! (Emoji Spam Automod)"
-        if settings.emoji_consequence[0]:
+    async def emoji_actions(self, 
+        message: discord.Message, 
+        settings: ModConfig,
+        synchronizer: AutomodSync._Synchronizer
+    ):
+        response = "Woah there! Don't get overly emotional! (Emoji Spam Automod)"
+        if settings.emoji_consequence[0] and synchronizer.may_delete():
+            synchronizer.register_delete()
             await message.delete()
             pass
         if settings.emoji_consequence[1]:
             await self.create_new_warning(message.guild,message.author,message.guild.me,"Automod Emoji Spam")
 
-            response = "".join((response,"\nMy moderators will hear about this!"))
+            response = "".join((response,"\nMy moderators will hear about this! (Warning)"))
             pass
 
         await message.channel.send(response,delete_after=5)
@@ -348,14 +450,21 @@ class Moderation(commands.Cog):
         spam_data = self.LAST_MESSAGES[message.guild.id][message.channel.id][message.author.id] # Using list instead of unpacking for easier manipulation of data
         settings = self.AUTOMOD_SETTINGS[message.guild.id]
 
-        if spam_data[0] is not None: # Don't need to check for similarity if there is no previous message
-            comparison = SequenceMatcher(None,message.content.lower(),spam_data[0])
-            similarity: float = await asyncio.get_event_loop().run_in_executor(None,lambda: comparison.ratio())
-            if similarity > settings.spam_max_message_similarity:
-                spam_data[1] += 1
-                pass
-            if spam_data[1] > settings.spam_max_message_repetition:
-                await self.spam_actions(message,settings)
+        with self.AUTOMOD_HANDLING_SYNC.sync(message.id) as synchronizer:
+            if spam_data[0] is not None: # Don't need to check for similarity if there is no previous message
+                comparison = SequenceMatcher(None,message.content.lower(),spam_data[0])
+                similarity: float = await asyncio.get_event_loop().run_in_executor(None,lambda: comparison.ratio())
+                if similarity > settings.spam_max_message_similarity:
+                    spam_data[1] += 1
+                    pass
+                
+                if spam_data[1] > settings.spam_max_message_repetition:
+                    await self.spam_actions(
+                        message,
+                        settings,
+                        synchronizer
+                    )
+                    pass
                 pass
             pass
         spam_data[0] = message.content.lower() # Comparison should be case-insensitive
@@ -371,10 +480,16 @@ class Moderation(commands.Cog):
 
         settings = self.AUTOMOD_SETTINGS[message.guild.id]
 
-        if len(message.clean_content) >= settings.caps_min_length:
-            caps_fraction: float = await asyncio.get_event_loop().run_in_executor(None,uppercase_fraction,message.clean_content)
-            if caps_fraction > settings.caps_max_ratio:
-                await self.caps_actions(message,settings)
+        with self.AUTOMOD_HANDLING_SYNC.sync(message.id) as synchronizer:
+            if len(message.clean_content) >= settings.caps_min_length:
+                caps_fraction: float = await asyncio.get_event_loop().run_in_executor(None,uppercase_fraction,message.clean_content)
+                if caps_fraction > settings.caps_max_ratio:
+                    await self.caps_actions(
+                        message,
+                        settings,
+                        synchronizer
+                    )
+                    pass
                 pass
             pass
         pass
@@ -389,10 +504,16 @@ class Moderation(commands.Cog):
         self.AUTOMOD_SETTINGS.setdefault(message.guild.id,ModConfig())
         settings = self.AUTOMOD_SETTINGS[message.guild.id]
 
-        if len(message.clean_content) >= settings.caps_min_length: # Assure message meets minimum length of content
-            emote_fraction: float = await asyncio.get_event_loop().run_in_executor(None,emoji_fraction,message)
-            if emote_fraction > settings.emoji_max_ratio:
-                await self.emoji_actions(message,settings)
+        with self.AUTOMOD_HANDLING_SYNC.sync(message.id) as synchronizer:
+            if len(message.clean_content) >= settings.emoji_min_length: # Assure message meets minimum length of content
+                emote_fraction: float = await asyncio.get_event_loop().run_in_executor(None,emoji_fraction,message)
+                if emote_fraction > settings.emoji_max_ratio:
+                    await self.emoji_actions(
+                        message,
+                        settings,
+                        synchronizer
+                    )
+                    pass
                 pass
             pass
         pass
@@ -931,7 +1052,7 @@ async def setup(bot: commands.Bot):
     pass
 
 async def teardown(bot: commands.Bot):
-    bot.remove_cog("Moderation")
+    await bot.remove_cog("Moderation")
     pass
 
 
