@@ -59,13 +59,25 @@ def create_sql_guild_entries(session, guild_id):
 class Bot(commands.Bot):
     INVITE_LINK = "https://discord.com/oauth2/authorize?client_id={id}&scope=bot%20applications.commands&permissions=8"
     
-    __slots__= "working_guilds", 
-    def __init__(self, *args,guild_ids = None, **kwargs):
+    __slots__= (
+        "working_guilds", 
+        "CONFIG",
+        "IS_TESTING",
+        "ENGINE",
+        "WEBHOOK_POOL",
+        "DATA"
+    )
+    def __init__(self, testing: bool, *args,guild_ids = None, **kwargs):
         super().__init__(*args,**kwargs)
 
         if guild_ids is not None:
             self.working_guilds = [discord.Object(id=gid) for gid in guild_ids]
             pass
+
+        self.CONFIG = cfg.load(CONFIG_FILE)
+        self.IS_TESTING = testing
+        self.WEBHOOK_POOL = utils.WebhookPool(self)
+        self.DATA = DataStorage()
         pass
 
     async def sql_entry_maker(self):
@@ -137,12 +149,10 @@ async def main():
         GUILD_MESSAGE_REACTIONS, MESSAGE_CONTENT,AUTO_MODERATION_CONFIGURATION, AUTO_MODERATION_EXECUTION"""
     if TESTING_MODE: guild_ids = (734461254747553823,)
     else: guild_ids = tuple()
-    BOT = Bot("/",help_command=None,intents=intents,guild_ids=guild_ids,loop=loop,enable_debug_events=True)
+    BOT = Bot(TESTING_MODE,"/",help_command=None,intents=intents,guild_ids=guild_ids,loop=loop,enable_debug_events=True)
     BOT.tasks = set()
 
     BOT.ENGINE = ENGINE
-    BOT.CONFIG = CONFIG
-    BOT.IS_TESTING = TESTING_MODE
 
     # Initialise ORM
     async with ENGINE.begin() as conn: # Create all tables to make sure that they actually... exist
@@ -155,9 +165,6 @@ async def main():
 
     # Run system
     logging.info("Launching")
-
-    BOT.WEBHOOK_POOL = utils.WebhookPool(BOT)
-    BOT.DATA = DataStorage()
 
     @BOT.listen("on_ready")
     async def on_ready():
