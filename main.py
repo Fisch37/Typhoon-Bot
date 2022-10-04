@@ -13,6 +13,7 @@ from discord.ext import commands
 
 CONFIG: cfg.Config = ...
 CONFIG_FILE = "config.cfg"
+TEST_SERVER_FILE = "test_servers"
 
 ENGINE: asql.AsyncEngine = ...
 SESSION_FACTORY: Sessionmaker = ...
@@ -147,8 +148,21 @@ async def main():
     """This is the following configuration:
     GUILDS, GUILD_MEMBERS, GUILD_BANS, GUILD_EMOJIS_AND_STICKERS, GUILD_WEBHOOKS, GUILD_INVITES, GUILD_MESSAGES, \
         GUILD_MESSAGE_REACTIONS, MESSAGE_CONTENT,AUTO_MODERATION_CONFIGURATION, AUTO_MODERATION_EXECUTION"""
-    if TESTING_MODE: guild_ids = (734461254747553823,)
-    else: guild_ids = tuple()
+    if TESTING_MODE: 
+        guild_ids = []
+        open(TEST_SERVER_FILE,"x").close()
+        with open(TEST_SERVER_FILE,"r") as file:
+            lines = file.readlines()
+            pass
+        for line in lines:
+            if line == "": continue
+            guild_ids.append(int(line))
+            pass
+        pass
+    else: 
+        guild_ids = []
+        pass
+
     BOT = Bot(TESTING_MODE,"/",help_command=None,intents=intents,guild_ids=guild_ids,loop=loop,enable_debug_events=True)
     BOT.tasks = set()
 
