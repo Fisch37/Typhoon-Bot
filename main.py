@@ -150,12 +150,13 @@ async def main():
         GUILD_MESSAGE_REACTIONS, MESSAGE_CONTENT,AUTO_MODERATION_CONFIGURATION, AUTO_MODERATION_EXECUTION"""
     if TESTING_MODE: 
         guild_ids = []
-        open(TEST_SERVER_FILE,"x").close()
-        with open(TEST_SERVER_FILE,"r") as file:
+        with open(TEST_SERVER_FILE,"w+") as file:
+            # Using w+ to create the file if it does not yet exist
             lines = file.readlines()
             pass
         for line in lines:
             if line == "": continue
+            # This is to protect against empty lines
             guild_ids.append(int(line))
             pass
         pass
