@@ -165,6 +165,7 @@ async def main():
         embed.add_field(
             name="Invite Link",
             value=f"If you need an invite link for this bot, use `/invite` or click [here]({BOT.INVITE_LINK.format(id=BOT.user.id)})",inline=False)
+        embed.set_author(name=f"{BOT.user.name} developed by Fisch37")
 
         await channel.send(embed=embed)
         pass
