@@ -23,21 +23,37 @@ BOT: "Bot" = ...
 class DataStorage:
     pass
 
-async def _sql_entry_creator(session, table, primary_key, value):
+def _sql_entry_creator(session, table, primary_key, value):
     # This function is a high-arbitration of several other pieces of code
     # It checks for the existance of a table entry and
     # if the entry does not exist, creates it
-    result = await session.execute(
-        sql.select(getattr(table,primary_key)).
-        where(
+    async def run():
+        result = await session.execute(
             sql.select(getattr(table,primary_key)).
-            where(getattr(table,primary_key) == value).
-            exists()
+            where(
+                sql.select(getattr(table,primary_key)).
+                where(getattr(table,primary_key) == value).
+                exists()
+            )
         )
-    )
-    if result.scalar() is None:
-        session.add(table(**{primary_key:value}))
+        if result.scalar() is None:
+            session.add(table(**{primary_key:value}))
+            pass
         pass
+    return asyncio.create_task(run())
+    pass
+
+def create_sql_guild_entries(session, guild_id):
+    tasks = []
+    def task_wrapping(*args):
+        tasks.append(_sql_entry_creator(*args))
+        pass
+    task_wrapping(session,Guild,"id",str(guild_id))
+    task_wrapping(session,GuildWarning,"guild_id",str(guild_id))
+    task_wrapping(session,GuildLevels,"guild_id",str(guild_id))
+    task_wrapping(session,ScheduledMessages,"guild_id",str(guild_id))
+
+    return tasks
     pass
 
 class Bot(commands.Bot):
@@ -54,16 +70,9 @@ class Bot(commands.Bot):
 
     async def sql_entry_maker(self):
         tasks = []
-        def task_wrapping(*args):
-            tasks.append(asyncio.create_task(_sql_entry_creator(*args)))
-            pass
-
         async with SESSION_FACTORY() as session:
             async for guild in self.fetch_guilds(limit=None):
-                task_wrapping(session,Guild,"id",str(guild.id))
-                task_wrapping(session,GuildWarning,"guild_id",str(guild.id))
-                task_wrapping(session,GuildLevels,"guild_id",str(guild.id))
-                task_wrapping(session,ScheduledMessages,"guild_id",str(guild.id))
+                tasks.extend(create_sql_guild_entries(session,guild.id))
                 pass
 
             await asyncio.gather(*tasks)
@@ -173,11 +182,7 @@ async def main():
     @BOT.listen("on_guild_join")
     async def sql_creator(guild: discord.Guild):
         async with SESSION_FACTORY() as session:
-            result: CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(guild.id)))
-            if result.first() is None:
-                session.add(Guild(id=str(guild.id)))
-                await session.commit()
-                pass
+            await asyncio.gather(*create_sql_guild_entries(session,guild.id))
             pass
         pass
 
