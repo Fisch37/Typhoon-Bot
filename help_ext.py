@@ -11,7 +11,8 @@ def split_help(content: str) -> tuple[str]:
     lines = content.split("\n")
     for line in lines:
         new_message_bit = "".join((messages[-1],line))
-        if len(new_message_bit) > 2000:
+        if len(new_message_bit) > 2000-3:
+            # subtracting three to add "```" later
             messages[-1] = "".join((messages[-1],"```"))
             messages.append("".join(("```md\n", line, "\n")))
             pass
@@ -20,6 +21,25 @@ def split_help(content: str) -> tuple[str]:
         pass
 
     return tuple(messages)
+    pass
+
+def help_for_any_command(command: app_commands.Command|app_commands.ContextMenu|app_commands.Group) -> str:
+    if isinstance(command,discord.app_commands.Group):
+        lines = help_from_group(command).splitlines(True)
+        indented = "\t" + "\t".join(lines[1:])
+        single_help = f"+ {lines[0]}{indented}"
+        pass
+    elif isinstance(command,app_commands.ContextMenu):
+        # Cannot use app_commands.ContextMenu
+        single_help = f"+ {help_from_context_menu(command)}"
+        pass
+    elif isinstance(command,discord.app_commands.Command):
+        single_help = f"+ {help_command_call_struct(command)}\n\t+ {command.description}"
+        pass
+    else:
+        single_help = "+ Unknown command"
+    
+    return f"{single_help}"
     pass
 
 def help_command_call_struct(command: app_commands.Command) -> str:
@@ -40,17 +60,10 @@ def help_command_call_struct(command: app_commands.Command) -> str:
 def help_from_cog(cog: commands.Cog) -> str:
     resp = f"```md\n# {cog.__cog_name__}\n{cog.description}\n"
     for command in cog.get_app_commands():
-        if isinstance(command,app_commands.Group):
-            lines = help_from_group(command).splitlines(True)
-            indented = "\t" + "\t".join(lines[1:])
-            resp = "".join((resp,"\n+ ",lines[0],indented))
-            pass
-        else:
-            resp = "".join((resp,"\n+ ",help_command_call_struct(command),"\n\t- ",str(command.description)))
-            pass
+        resp = f"{resp}\n{help_for_any_command(command)}"
         pass
 
-    return "".join((resp,"```"))
+    return f"{resp}```"
     pass
 
 def help_from_group(command_group: discord.app_commands.Group) -> str:
@@ -64,11 +77,24 @@ def help_from_group(command_group: discord.app_commands.Group) -> str:
             resp = "".join((resp,"+ ",indented,"\n"))
             pass
         else:
-            resp = "".join((resp,"+ ",help_command_call_struct(command),"\n\t- ",command.description,"\n"))
+            if isinstance(command,app_commands.commands.ContextMenu):
+                print("Group handler!")
+                pass
+            resp = f"{resp}+ {help_command_call_struct(command)}\n\t+ {command.description}\n"
             pass
         pass
 
     return resp[:-1]
+    pass
+
+def help_from_context_menu(command: discord.app_commands.ContextMenu) -> str:
+    if command.type == discord.AppCommandType.message:
+        cmd_type = "Message Command"
+    elif command.type == discord.AppCommandType.user:
+        cmd_type = "User Command"
+    else:
+        cmd_type = "Unknown Context Command"
+    return f"({cmd_type}): {str(command.name)}"
     pass
 
 def whole_help() -> str:
@@ -78,33 +104,22 @@ def whole_help() -> str:
     for name, cog in BOT.cogs.items():
         cog_resp = f"\n# {name}\n{cog.description}\n"
         for command in cog.get_app_commands():
-            if isinstance(command,discord.app_commands.Group):
-                lines = help_from_group(command).splitlines(True)
-                indented = "\t" + "\t".join(lines[1:])
-                cog_resp = "".join((cog_resp,"\n+ ",lines[0],indented))
-                pass
-            else:
-                cog_resp = "".join((cog_resp,f"\n+ {help_command_call_struct(command)}\n\t- {command.description}"))
-                pass
+            single_help = help_for_any_command(command)
 
+            cog_resp = f"{cog_resp}\n{single_help}"
             cog_commands.add(command) # Add command to set of commands with a cog
             pass
 
-        all_cogs_resp = "\n".join((all_cogs_resp,cog_resp))
+        all_cogs_resp = f"{all_cogs_resp}\n{cog_resp}\n"
         pass
 
     no_cog_commands = set(BOT.tree.get_commands()).difference(cog_commands)
     no_cogs_resp = "# No category\n"
     for command in no_cog_commands:
-        if isinstance(command,app_commands.Group):
-            no_cogs_resp = "".join((cog_resp,help_from_group(command)))
-            pass
-        else:
-            no_cogs_resp = "".join((no_cogs_resp,f"+ {help_command_call_struct(command)}\n\t- {command.description}"))
-            pass
+        no_cogs_resp = f"{no_cogs_resp}\n{help_for_any_command(command)}"
         pass
 
-    return "".join(("```md\n",no_cogs_resp,"\n",all_cogs_resp,"```"))
+    return f"```md\n{no_cogs_resp}\n{all_cogs_resp}```"
     pass
 
 def searchCommands(matcher: str, current_guild: discord.Guild=None) -> set[app_commands.Command]:
