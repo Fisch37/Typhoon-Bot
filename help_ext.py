@@ -162,42 +162,39 @@ async def help(interaction: discord.Interaction, command_or_category: str=""):
             pass
 
         @discord.ui.button(label="Search for command",style=discord.ButtonStyle.primary,row=1)
-        async def search_for_command(self: discord.ui.View, vinteraction: discord.Interaction, button: discord.ui.Button):
-            await vinteraction.response.send_message("This function is not yet implemented and will be so in the future using modals", ephemeral=True)
-            raise NotImplementedError("This function is not yet implemented and will be so in the future using modals")
-            select: discord.ui.Select = self.children[0] # Get select menu from message components
-            button.disabled = True # Disable button
-            select.disabled = True # Disable select menu
-
-            await message.edit(content="```\nPlease type in a command search (send a message)\nUse ? as a one character wildcard\nand * as a multi character wildcard```",view=self)
-            await vinteraction.response.defer()
-
-            searchMsg: discord.Message = await BOT.wait_for("message",check=lambda msg: msg.author.id == interaction.user.id and msg.channel == interaction.channel) # Wait for a reply from the user
-            await searchMsg.delete() # Delete the reply to prevent the help command from getting thrown to high up
-
-            loop = asyncio.get_event_loop()
-            results = await loop.run_in_executor(None, searchCommands,searchMsg.content) # Search for all commands that match the filter given by the user
+        async def search_for_command(
+            self: discord.ui.View, 
+            vinteraction: discord.Interaction, 
+            button: discord.ui.Button
+        ):
+            modal = utils.get_SingleTextModal(
+                "Search query",
+                placeholder="Please enter your search query here"
+            )(title="Search for command")
+            await vinteraction.response.send_modal(modal)
+            interaction, query = await modal.wait_for_results()
+            if query is None:
+                await interaction.response.send_message("Query cancelled",ephemeral=True)
+            await interaction.response.defer()
             
-            if len(results) > 0:
-                searchResp = "```md\n" # Set up result
-                for command in results:
-                    if isinstance(command,app_commands.Group):
-                        searchResp = "".join((searchResp,help_from_group(command),"\n"))
-                        pass
-                    else:
-                        searchResp = "".join((searchResp,f"+ {help_command_call_struct(command)}\n\t- {command.description}\n"))
-                        pass
+            matching_commands = []
+            for command in BOT.tree.get_commands():
+                if utils.stringFilter(command.name,query):
+                    matching_commands.append(command)
                     pass
-                searchResp = "".join((searchResp,"```"))
-            else:
-                searchResp = "```\nThere's no command matching this filter```"
                 pass
 
-            button.disabled = False # Reenable search option
-            select.disabled = False # Reenable cog selection
-            for option in select.options: option.default = False
-
-            await message.edit(content=searchResp,view=self)
+            full_response = f"{len(matching_commands)} search results for `{query}`\n```md\n"
+            for command in sorted(
+                matching_commands,
+                key=lambda c: c.name
+            ):
+                full_response = f"{full_response}{help_for_any_command(command)}\n"
+                pass
+            full_response = f"{full_response}```"
+            for resp in split_help(full_response):
+                await interaction.followup.send(resp,ephemeral=True)
+                # Doing this in sync to preserve order
             pass
         pass
 
