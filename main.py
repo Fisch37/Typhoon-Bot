@@ -13,6 +13,7 @@ from discord.ext import commands
 
 CONFIG: cfg.Config = ...
 CONFIG_FILE = "config.cfg"
+TEST_SERVER_FILE = "test_servers"
 
 ENGINE: asql.AsyncEngine = ...
 SESSION_FACTORY: Sessionmaker = ...
@@ -23,47 +24,68 @@ BOT: "Bot" = ...
 class DataStorage:
     pass
 
-async def _sql_entry_creator(session, table, primary_key, value):
+def _sql_entry_creator(session, table, primary_key, value):
     # This function is a high-arbitration of several other pieces of code
     # It checks for the existance of a table entry and
     # if the entry does not exist, creates it
-    result = await session.execute(
-        sql.select(getattr(table,primary_key)).
-        where(
+    async def run():
+        result = await session.execute(
             sql.select(getattr(table,primary_key)).
-            where(getattr(table,primary_key) == value).
-            exists()
+            where(
+                sql.select(getattr(table,primary_key)).
+                where(getattr(table,primary_key) == value).
+                exists()
+            )
         )
-    )
-    if result.scalar() is None:
-        session.add(table(**{primary_key:value}))
+        if result.scalar() is None:
+            session.add(table(**{primary_key:value}))
+            pass
         pass
+    return asyncio.create_task(run())
+    pass
+
+def create_sql_guild_entries(session, guild_id):
+    tasks = []
+    def task_wrapping(*args):
+        tasks.append(_sql_entry_creator(*args))
+        pass
+    task_wrapping(session,Guild,"id",str(guild_id))
+    task_wrapping(session,GuildWarning,"guild_id",str(guild_id))
+    task_wrapping(session,GuildLevels,"guild_id",str(guild_id))
+    task_wrapping(session,ScheduledMessages,"guild_id",str(guild_id))
+
+    return tasks
     pass
 
 class Bot(commands.Bot):
     INVITE_LINK = "https://discord.com/oauth2/authorize?client_id={id}&scope=bot%20applications.commands&permissions=8"
     
-    __slots__= "working_guilds", 
-    def __init__(self, *args,guild_ids = None, **kwargs):
+    __slots__= (
+        "working_guilds", 
+        "CONFIG",
+        "IS_TESTING",
+        "ENGINE",
+        "WEBHOOK_POOL",
+        "DATA"
+    )
+    def __init__(self, testing: bool, *args,guild_ids = None, **kwargs):
         super().__init__(*args,**kwargs)
 
         if guild_ids is not None:
             self.working_guilds = [discord.Object(id=gid) for gid in guild_ids]
             pass
+
+        self.CONFIG = cfg.load(CONFIG_FILE)
+        self.IS_TESTING = testing
+        self.WEBHOOK_POOL = utils.WebhookPool(self)
+        self.DATA = DataStorage()
         pass
 
     async def sql_entry_maker(self):
         tasks = []
-        def task_wrapping(*args):
-            tasks.append(asyncio.create_task(_sql_entry_creator(*args)))
-            pass
-
         async with SESSION_FACTORY() as session:
             async for guild in self.fetch_guilds(limit=None):
-                task_wrapping(session,Guild,"id",str(guild.id))
-                task_wrapping(session,GuildWarning,"guild_id",str(guild.id))
-                task_wrapping(session,GuildLevels,"guild_id",str(guild.id))
-                task_wrapping(session,ScheduledMessages,"guild_id",str(guild.id))
+                tasks.extend(create_sql_guild_entries(session,guild.id))
                 pass
 
             await asyncio.gather(*tasks)
@@ -126,14 +148,26 @@ async def main():
     """This is the following configuration:
     GUILDS, GUILD_MEMBERS, GUILD_BANS, GUILD_EMOJIS_AND_STICKERS, GUILD_WEBHOOKS, GUILD_INVITES, GUILD_MESSAGES, \
         GUILD_MESSAGE_REACTIONS, MESSAGE_CONTENT,AUTO_MODERATION_CONFIGURATION, AUTO_MODERATION_EXECUTION"""
-    if TESTING_MODE: guild_ids = (734461254747553823,)
-    else: guild_ids = tuple()
-    BOT = Bot("/",help_command=None,intents=intents,guild_ids=guild_ids,loop=loop,enable_debug_events=True)
+    if TESTING_MODE: 
+        guild_ids = []
+        with open(TEST_SERVER_FILE,"w+") as file:
+            # Using w+ to create the file if it does not yet exist
+            lines = file.readlines()
+            pass
+        for line in lines:
+            if line == "": continue
+            # This is to protect against empty lines
+            guild_ids.append(int(line))
+            pass
+        pass
+    else: 
+        guild_ids = []
+        pass
+
+    BOT = Bot(TESTING_MODE,"/",help_command=None,intents=intents,guild_ids=guild_ids,loop=loop,enable_debug_events=True)
     BOT.tasks = set()
 
     BOT.ENGINE = ENGINE
-    BOT.CONFIG = CONFIG
-    BOT.IS_TESTING = TESTING_MODE
 
     # Initialise ORM
     async with ENGINE.begin() as conn: # Create all tables to make sure that they actually... exist
@@ -146,9 +180,6 @@ async def main():
 
     # Run system
     logging.info("Launching")
-
-    BOT.WEBHOOK_POOL = utils.WebhookPool(BOT)
-    BOT.DATA = DataStorage()
 
     @BOT.listen("on_ready")
     async def on_ready():
@@ -165,6 +196,7 @@ async def main():
         embed.add_field(
             name="Invite Link",
             value=f"If you need an invite link for this bot, use `/invite` or click [here]({BOT.INVITE_LINK.format(id=BOT.user.id)})",inline=False)
+        embed.set_author(name=f"{BOT.user.name} developed by Fisch37")
 
         await channel.send(embed=embed)
         pass
@@ -172,11 +204,7 @@ async def main():
     @BOT.listen("on_guild_join")
     async def sql_creator(guild: discord.Guild):
         async with SESSION_FACTORY() as session:
-            result: CursorResult = await session.execute(sql.select(Guild).where(Guild.id == str(guild.id)))
-            if result.first() is None:
-                session.add(Guild(id=str(guild.id)))
-                await session.commit()
-                pass
+            await asyncio.gather(*create_sql_guild_entries(session,guild.id))
             pass
         pass
 
