@@ -165,7 +165,6 @@ async def main():
         pass
 
     BOT = Bot(TESTING_MODE,"/",help_command=None,intents=intents,guild_ids=guild_ids,loop=loop,enable_debug_events=True)
-    BOT.tasks = set()
 
     BOT.ENGINE = ENGINE
 
