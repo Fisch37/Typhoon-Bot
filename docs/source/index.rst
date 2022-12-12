@@ -3,13 +3,15 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to Typhoon Discord Bot's documentation!
+Welcome to the Typhoon Documentation!
 ===============================================
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
-
+   
+   getting_started
+   setup
 
 
 Indices and tables
