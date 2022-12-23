@@ -544,6 +544,7 @@ class VoteCreationModal(discord.ui.Modal):
     )
     duration = discord.ui.TextInput(
         label="Duration",
+        placeholder="Enter a duration like 2H15M13S",
         style=discord.TextStyle.short
     )
 

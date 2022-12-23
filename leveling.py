@@ -193,14 +193,14 @@ class Leveling(commands.Cog):
         self.sql_saver_task.stop()
         pass
 
-    async def send_levelup(self, message: discord.Message, level: int):
+    async def gen_levelup_message(self, message: discord.Message, level: int):
         lvl_settings = self.LEVEL_SETTINGS[message.guild.id]
         levels = self.LEVELS[message.guild.id]
 
         lvlup_channel = message.guild.get_channel(lvl_settings.channel_id) if lvl_settings.channel_id is not None else message.channel
 
         msg = format_lvlup_template(lvl_settings.level_msg,message.author,message.guild,levels,lvlup_channel,message.channel)
-        await lvlup_channel.send(msg)
+        return msg
         pass
 
     def get_reward_role_msg(self, member: discord.Member, role: discord.Role, i: int) -> str:
@@ -219,7 +219,7 @@ class Leveling(commands.Cog):
         reward_roles = self.REWARD_ROLES[message.guild.id]
 
         lines = []
-        roles = set()
+        roles: set[discord.Role] = set()
         for i, role_id in enumerate(reward_roles.rewards_for_level(level)):
             role = message.guild.get_role(role_id)
             if role is not None: 
@@ -228,13 +228,19 @@ class Leveling(commands.Cog):
                 pass
             pass
 
-        if len(lines) > 0:
-            await message.author.add_roles(*roles,reason="Reward roles")
-
-            channel_id = self.LEVEL_SETTINGS[message.guild.id].channel_id
-            lvlup_channel = message.guild.get_channel(channel_id) if channel_id is not None else message.channel
-            await lvlup_channel.send("\n".join(lines))
+        try:
+            if len(lines) > 0:
+                await message.author.add_roles(*roles,reason="Reward roles")
+                pass
             pass
+        except discord.errors.Forbidden:
+            lines = ["Oh no! I tried to give you the following roles, but it seems I don't have permission to do that!"]
+            for role in roles:
+                lines.append(role.mention)
+                pass
+            pass
+
+        return lines
         pass
 
     @commands.Cog.listener("on_message")
@@ -259,8 +265,17 @@ class Leveling(commands.Cog):
 
         if prev_level != post_level:
             # Doing this in relative sync for consistency (Note: With modern versions of discord.py this won't affect other on_message events since they are scheduled as tasks)
-            await self.send_levelup(message,post_level)
-            await self.reward_roles_check(message,post_level)
+            lines = [await self.gen_levelup_message(message,post_level)]
+            lines.extend(
+                await self.reward_roles_check(message,post_level)
+            )
+            if lines:
+                allowed_mentions = discord.AllowedMentions.none()
+                allowed_mentions.users = True
+
+                channel = guild.get_channel(level_settings.channel_id or message.channel.id)
+                await channel.send("\n".join(lines),allowed_mentions=allowed_mentions)
+                pass
             pass
         pass
 
