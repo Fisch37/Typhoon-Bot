@@ -1219,6 +1219,9 @@ async def update(self: ConfigElement):
     if announcement_channel_id is not None:
         current_channel = guild.get_channel(announcement_channel_id)
         pass
+    else:
+        current_channel = None
+        pass
     if None in (announcement_channel_id, current_channel):
         current_channel = guild.text_channels[0]
         pass
