@@ -37,7 +37,7 @@ Appearances of Branches and Elements
 ***************************************
 
 Every branch comes with a description, which is different from its brief.
-A description is usually more detailed and ** if required ** explain what the subbranches do.
+A description is usually more detailed and (if required) explain what the subbranches do.
 
 .. image:: _static/config/element.png
     :width: 400
