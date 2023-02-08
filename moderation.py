@@ -606,8 +606,8 @@ class Moderation(commands.Cog):
 
     @anarchy.command(name="enable",description="Excludes this channel from the automod")
     async def set_anarchy(self, interaction: discord.Interaction):
-        try:
-            sqlguild, session = await utils.get_guild(interaction.guild_id) # Get the SQL Reference to the guild
+        async with SESSION_FACTORY() as session:
+            sqlguild = await utils.get_guild(session,interaction.guild_id) # Get the SQL Reference to the guild
             if not str(interaction.channel_id) in sqlguild.anarchies:
                 sqlguild.anarchies.append(str(interaction.channel_id)) # Add the channel to the anarchy channels
                 await interaction.response.send_message("Woo! Anarchy... I guess..." + (" You know, as a moderation bot this is a rather weird thing to say..." if random.randint(1,25) == 25 else ""),ephemeral=True)
@@ -617,15 +617,14 @@ class Moderation(commands.Cog):
                 pass
             
             await session.commit()
-        finally:
-            await session.close()
+            pass
         asyncio.create_task(self.anarchy_sql_update(interaction))
         pass
 
     @anarchy.command(name="disable",description="(Re)includes this channel in the automod")
     async def rem_anarchy(self, interaction: discord.Interaction):
-        try:
-            sqlguild, session = await utils.get_guild(interaction.guild_id) # Get SQL Reference to the guild
+        async with SESSION_FACTORY() as session:
+            sqlguild = await utils.get_guild(session,interaction.guild_id) # Get SQL Reference to the guild
             if str(interaction.channel_id) in sqlguild.anarchies:
                 sqlguild.anarchies.remove(str(interaction.channel_id))
                 await interaction.response.send_message("Alright, anarchy is disabled now. No, put that axe away; I said it is **disabled** now.",ephemeral=True)
@@ -635,30 +634,28 @@ class Moderation(commands.Cog):
                 pass
 
             await session.commit()
-        finally:
-            await session.close() # Commit & Close
+            pass
         asyncio.create_task(self.anarchy_sql_update(interaction))
         pass
 
     @anarchy.command(name="list",description="List all anarchy channels on this server")
     async def list_anarchy(self, interaction: discord.Interaction):
-        try:
-            sqlguild, session = await utils.get_guild(interaction.guild_id) # Get SQL Reference to the guild
+        async with SESSION_FACTORY() as session:
+            sqlguild = await utils.get_guild(session,interaction.guild_id) # Get SQL Reference to the guild
             
             embed = discord.Embed(title="Anarchy channels",colour=discord.Colour.blue(),description="")
             for channel_str in sqlguild.anarchies: # List every anarchy channel in the embed description
                 channel = interaction.guild.get_channel(int(channel_str))
                 embed.description = "".join((embed.description,channel.mention,"\n"))
                 pass
-        finally:
-            await session.close()
+            pass
 
         await interaction.response.send_message(embed=embed,ephemeral=True)
         pass
 
     async def anarchy_sql_update(self,interaction: discord.Interaction):
-        try:
-            sqlguild, session = await utils.get_guild(interaction.guild_id)
+        async with SESSION_FACTORY() as session:
+            sqlguild = await utils.get_guild(session,interaction.guild_id)
             # Remove all outdated channels (channels that were deleted)
             all_channel_ids: list[ChannelId] = [channel.id for channel in interaction.guild.text_channels]
 
@@ -671,8 +668,7 @@ class Moderation(commands.Cog):
             self.ANARCHIES[interaction.guild_id].update([int(channel_str) for channel_str in sqlguild.anarchies])
 
             await session.commit()
-        finally:
-            await session.close() # Commit & Close
+            pass
         pass
 
     # Message Mod
