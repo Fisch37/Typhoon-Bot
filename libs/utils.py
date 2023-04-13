@@ -405,3 +405,49 @@ def get_SingleTextModal(
 
     return SingleTextModal
     pass
+
+def get_RoleSelectView(
+        placeholder: str|None=None,
+        owner: discord.Member|None=None,
+        min_values: int=1,
+        max_values: int=1,
+        /,
+        extra_check: Callable[[list[discord.Role],discord.Member],bool] = lambda a,b: True,
+        check_fail_msg: str = "Some extra check failed!"
+    ):
+    class SingleSelectView(discord.ui.View):
+        def __init__(self, *args, **kwargs):
+            self.result: list[discord.Role]|None = None
+            super().__init__(*args,**kwargs)
+            pass
+
+        @discord.ui.select(
+            cls=discord.ui.RoleSelect,
+            placeholder=placeholder,
+            min_values=min_values,
+            max_values=max_values
+        )
+        async def on_select(
+            self, 
+            interaction: discord.Interaction, 
+            select: discord.ui.RoleSelect,
+            ):
+            if owner is not None and interaction.user != owner:
+                await interaction.response.send_message(
+                    "You do not have permission to enter data here!",
+                    ephemeral=True
+                )
+                return
+            if not extra_check(select.values,interaction.user):
+                await interaction.response.send_message(
+                    check_fail_msg,
+                    ephemeral=True
+                )
+            self.result = select.values
+            await interaction.response.defer()
+            self.stop()
+            pass
+        pass
+
+    return SingleSelectView
+    pass

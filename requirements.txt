@@ -1,4 +1,4 @@
-discord.py==2.0.0
+discord.py>=2.1.0
 SQLAlchemy>=1.4.25
 sqlalchemy_json>=0.5.0
 asyncmy>=0.2

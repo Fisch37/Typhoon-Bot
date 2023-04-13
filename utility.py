@@ -367,34 +367,67 @@ class ReactionRoleEditor(editor.CloseEditor):
         return await super().update()
 
     def _available_roles(self) -> tuple[discord.Role]:
-        is_owner = self._target_message.author == self._target_message.guild.owner
-        authority = self._target_message.author.top_role
-        bot_authority = self._target_message.guild.me.top_role
+        guild = self._target_message.guild
+        is_owner = self._target_message.author == guild.owner
+        author = self._target_message.author
+        if not isinstance(author,discord.Member):
+            author = guild.get_member(author.id)
+        authority = author.top_role
+        bot_authority = guild.me.top_role
         return tuple(filter(
             lambda role: 
                 (is_owner or authority > role)
                 and bot_authority > role
                 and role not in self._reaction_roles.values()
-                and role != self._target_message.guild.default_role, 
-            self._target_message.guild.roles
+                and role != guild.default_role, 
+            guild.roles
+        ))
+        pass
+
+    def role_is_legal(
+            self, 
+            role_or_roles: discord.Role|list[discord.Role],
+            perspective: discord.Member|discord.User
+        ):
+        if isinstance(role_or_roles,discord.Role):
+            role_or_roles = [role_or_roles]
+            pass
+        guild = self._target_message.guild
+        if not isinstance(perspective,discord.Member):
+            perspective = guild.get_member(
+                perspective.id
+            )
+            pass
+        
+        user_authority = perspective.top_role
+        bot_authority = guild.me.top_role
+        return all((
+            (guild.owner == perspective or user_authority > role)
+            and bot_authority > role
+            and role not in self._reaction_roles.values()
+            and role != guild.default_role
+            for role in role_or_roles
         ))
         pass
     
-    async def _get_role_select(self, _) -> discord.Role:
-        available_roles = self._available_roles()
-        options = [
-            discord.SelectOption(label=role.name)
-            for role in available_roles
-        ]
-        
-        view = utils.get_SingleSelectView(
-            "Please select a role to add as a reaction role",
-            options,
-            owner=self._editor_author
+    async def _get_role_select(
+            self, 
+            interaction: discord.Interaction
+        ) -> discord.Role|None:
+        view = utils.get_RoleSelectView(
+            "Please select a role...",
+            self._editor_author,
+            extra_check=self.role_is_legal,
+            check_fail_msg="This role is not available. Select a role you'd be able to assign and make sure my role is above the role you are targeting."
         )(timeout=CONFIG.EDIT_TIMEOUT)
         await self._message.edit(view=view)
-        await view.wait()
-        return available_roles[options.index(view.result)]
+        if await view.wait(): 
+            await interaction.followup.send(
+                "The adding process failed due to a timeout",
+                ephemeral=True
+            )
+            return
+        return view.result[0]
         pass
 
     async def _get_role_message(self, interaction: discord.Interaction) -> discord.Role:
@@ -442,7 +475,7 @@ class ReactionRoleEditor(editor.CloseEditor):
         while True:
             payload = await BOT.wait_for(
                 "raw_reaction_add",
-                check=same_message_check# lambda payload: payload.message_id == self._message.id
+                check=same_message_check
             )
             # This is done as a raw_reaction event since a normal reaction event doesn't pass the new user who reacted, but instead all users
             # This means however that we get a PartialEmoji which is fine, but makes it impossible to check for availability
@@ -470,12 +503,8 @@ class ReactionRoleEditor(editor.CloseEditor):
 
         # Getting the role
         await self._message.edit(content="```\nPlease choose a role```")
-        if len(self._available_roles()) <= 25:
-            role = await self._get_role_select(interaction)
-            pass
-        else:
-            role = await self._get_role_message(interaction)
-            pass
+        role = await self._get_role_select(interaction)
+        if role is None: return
 
         self._reaction_roles[reaction] = role
         await self._update_sql()
