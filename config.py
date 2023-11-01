@@ -8,7 +8,7 @@ Here only the ConfigBranch and ConfigElement objects are created as well as the 
 from leveling import LevelSettings, RewardRoles
 from libs import utils, config
 from libs.config_base import branch_factory, element_factory, ConfigElement, ConfigButton, ConfigSelect, CONFIG_TIMEOUT
-from libs.interpret_levelup import VAR_DESCR as LVL_UP_MSG_VAR_DESCR, raw_format as lvl_up_formatter
+from extensions.leveling.interpret_levelup import LEVEL_UP_MSG_VARS, _raw_format as lvl_up_formatter
 from libs.converters.time import DurationConverter, OutOfOrderException
 from libs.logging_utils import LoggingSettings, translation_table as LOGGING_TRANSLATE
 import asyncio
@@ -793,7 +793,7 @@ async def on_interaction(self: ConfigElement, element: discord.ui.Item, interact
     if isinstance(element,discord.ui.Button):
         if element.label == "Set Message":
             list_assembles = []
-            for var_name, var_descr in LVL_UP_MSG_VAR_DESCR:
+            for var_name, var_descr in LEVEL_UP_MSG_VARS:
                 list_assembles.append(f"[{var_name}]\n\t{var_descr}")
                 pass
             markdown = "```css\n{}```".format('\n'.join(list_assembles))

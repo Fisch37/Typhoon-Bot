@@ -15,7 +15,7 @@ class LoggingSettings:
         "threads_mod"
     )
 
-    def __init__(self, 
+    def __init__(self,
         moderation    : bool=False, 
         channels      : bool=False, 
         server_update : bool=False,

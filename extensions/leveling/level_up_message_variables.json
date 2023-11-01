@@ -1,0 +1,14 @@
+{
+    "user_name" : "The username. This does not change with the nickname and does not mention the user",
+    "user_nick" : "The nickname of a user. This can change with the server. It does not mention the user",
+    "user_mention" : "Mentions the user",
+    
+    "server_name" : "The server name.",
+    "server_members" : "The amount of members on a server.",
+
+    "level" : "The level of the user.",
+    "xp" : "The xp of the user.",
+    "rank" : "The rank of the user on the leaderboard.",
+    "channel" : "The channel a user has achieved their level-up in. This needn't be the channel this message is sent in",
+    "send_channel" : "The channel this message will be sent in."
+}

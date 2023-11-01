@@ -5,7 +5,7 @@ from discord import app_commands
 import aiohttp
 
 from libs import utils, config
-from libs.interpret_levelup import format_msg as format_lvlup_template
+from extensions.leveling.interpret_levelup import format_msg as format_lvlup_template
 from loop import loop
 import logging, random, asyncio, time, json, io
 from datetime import datetime
@@ -199,20 +199,31 @@ class Leveling(commands.Cog):
 
         lvlup_channel = message.guild.get_channel(lvl_settings.channel_id) if lvl_settings.channel_id is not None else message.channel
 
-        msg = format_lvlup_template(lvl_settings.level_msg,message.author,message.guild,levels,lvlup_channel,message.channel)
+        msg = format_lvlup_template(
+            lvl_settings.level_msg,
+            message.author,
+            message.guild,
+            levels,
+            lvlup_channel,message.channel
+        )
         return msg
-        pass
 
     def get_reward_role_msg(self, member: discord.Member, role: discord.Role, i: int) -> str:
-        if   i == 0: return f"Congratulations! You have leveled up and now have the role {role.name}!"
-        elif i == 1: return f"What's this? Another role! It's {role.name}!"
-        elif i == 2: return f"But wait, there's more! You receive... Another role! ({role.name})"
-        elif i == 3: return f"Now... This is kind of getting excessive. There are 4 roles now... {role.name} is the new role you get now."
-        elif i == 4: return f"Talking about excessive: There's another role you receive: {role.name}"
-        elif i == 5: return f"Okay, I'm not going to write a custom message for every role you get. I'll just list off all the roles form now on: {role.name}"
-        elif i == 19: return f"Hello! You found the secret! I do not know who would set 20 different roles for one level in any reasonable scenario, so I decided to put this secret here. So, lucky you! You found a secret! Go post it on the support server! You might get a special reward for it!"
+        if   i == 0: 
+            return f"Congratulations! You have leveled up and now have the role {role.name}!"
+        elif i == 1: 
+            return f"What's this? Another role! It's {role.name}!"
+        elif i == 2: 
+            return f"But wait, there's more! You receive... Another role! ({role.name})"
+        elif i == 3: 
+            return f"Now... This is kind of getting excessive. There are 4 roles now... {role.name} is the new role you get now."
+        elif i == 4: 
+            return f"Talking about excessive: There's another role you receive: {role.name}"
+        elif i == 5: 
+            return f"Okay, I'm not going to write a custom message for every role you get. I'll just list off all the roles form now on: {role.name}"
+        elif i == 19: 
+            return f"Hello! You found the secret! I do not know who would set 20 different roles for one level in any reasonable scenario, so I decided to put this secret here. So, lucky you! You found a secret! Go post it on the support server! You might get a special reward for it!"
         else: return role.name
-        pass
 
     async def reward_roles_check(self, message: discord.Message, level: int):
         self.REWARD_ROLES.setdefault(message.guild.id,RewardRoles({}))
